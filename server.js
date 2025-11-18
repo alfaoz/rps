@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const readline = require('readline');
 
 const app = express();
 const server = http.createServer(app);
@@ -10,6 +11,7 @@ const io = socketIo(server);
 app.use(express.static(__dirname));
 
 const rooms = {};
+const playerPings = {};
 
 function generateRoomId() {
   return Math.random().toString(36).substring(2, 7).toUpperCase();
@@ -18,13 +20,20 @@ function generateRoomId() {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  // Auto-ping all connected players every 2 seconds
+  const pingTracker = setInterval(() => {
+    const timestamp = Date.now();
+    socket.emit('server_ping', { timestamp });
+  }, 2000);
+
   socket.on('create_room', () => {
     const roomId = generateRoomId();
     rooms[roomId] = {
       players: [socket.id],
       choices: {},
       ready: {},
-      resetRequests: {}
+      resetRequests: {},
+      scores: {}
     };
     socket.join(roomId);
     socket.emit('room_created', roomId);
@@ -43,6 +52,13 @@ io.on('connection', (socket) => {
     }
     room.players.push(socket.id);
     socket.join(roomId);
+
+    // Initialize scores for both players
+    if (room.players.length === 2) {
+      room.scores[room.players[0]] = 0;
+      room.scores[room.players[1]] = 0;
+    }
+
     socket.emit('room_joined', roomId);
     io.to(roomId).emit('player_joined', { playerCount: room.players.length });
     console.log('Player joined room:', roomId);
@@ -63,6 +79,13 @@ io.on('connection', (socket) => {
       const choice2 = room.choices[p2];
 
       const result = determineWinner(choice1, choice2);
+
+      // Update scores
+      if (result === 'player1') {
+        room.scores[p1]++;
+      } else if (result === 'player2') {
+        room.scores[p2]++;
+      }
 
       io.to(roomId).emit('game_result', {
         player1: choice1,
@@ -101,6 +124,10 @@ io.on('connection', (socket) => {
     // If both players want to reset
     if (Object.keys(room.resetRequests).length === 2) {
       room.resetRequests = {};
+      // Reset server-side scores
+      room.players.forEach(playerId => {
+        room.scores[playerId] = 0;
+      });
       io.to(roomId).emit('score_reset');
     }
   });
@@ -115,8 +142,39 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('reset_cancelled');
   });
 
+  socket.on('server_pong', ({ timestamp }) => {
+    // Calculate latency and store it
+    const latency = Date.now() - timestamp;
+    playerPings[socket.id] = latency;
+
+    // Broadcast this player's ping to others in their room (for debug mode)
+    for (const roomId in rooms) {
+      const room = rooms[roomId];
+      if (room.players.includes(socket.id)) {
+        // Send opponent's ping to this player
+        room.players.forEach(playerId => {
+          if (playerId !== socket.id && playerPings[playerId]) {
+            socket.emit('opponent_ping', { ping: playerPings[playerId] });
+          }
+        });
+
+        // Send this player's ping to opponents
+        socket.to(roomId).emit('opponent_ping', { ping: latency });
+        break;
+      }
+    }
+  });
+
+  socket.on('ping_request', ({ timestamp }) => {
+    // Respond with the timestamp for latency calculation (for debug mode)
+    socket.emit('ping_response', { timestamp });
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    clearInterval(pingTracker);
+    delete playerPings[socket.id];
+
     for (const roomId in rooms) {
       const room = rooms[roomId];
       const index = room.players.indexOf(socket.id);
@@ -147,4 +205,69 @@ function determineWinner(choice1, choice2) {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`rock paper scissors server running on http://localhost:${PORT} :3`);
+  console.log('type /help for server commands');
+});
+
+// Server console commands
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+  prompt: ''
+});
+
+rl.on('line', (input) => {
+  const cmd = input.trim();
+
+  if (cmd === '/help') {
+    console.log('\nserver commands:');
+    console.log('  /games  - list all active games');
+    console.log('  /ping   - show ping for all players');
+    console.log('  /scores - show scores for all games');
+    console.log('  /help   - show this help message\n');
+  }
+
+  else if (cmd === '/games') {
+    const gameCount = Object.keys(rooms).length;
+    console.log(`\nactive games: ${gameCount}`);
+    for (const roomId in rooms) {
+      const room = rooms[roomId];
+      console.log(`  room ${roomId}: ${room.players.length} player(s)`);
+    }
+    console.log('');
+  }
+
+  else if (cmd === '/ping') {
+    console.log('\nplayer pings:');
+    let hasPings = false;
+    for (const playerId in playerPings) {
+      console.log(`  ${playerId.substring(0, 8)}...: ${playerPings[playerId]}ms`);
+      hasPings = true;
+    }
+    if (!hasPings) {
+      console.log('  no ping data available');
+    }
+    console.log('');
+  }
+
+  else if (cmd === '/scores') {
+    console.log('\ngame scores:');
+    let hasGames = false;
+    for (const roomId in rooms) {
+      const room = rooms[roomId];
+      if (room.players.length === 2) {
+        const p1 = room.players[0];
+        const p2 = room.players[1];
+        const score1 = room.scores[p1] || 0;
+        const score2 = room.scores[p2] || 0;
+        console.log(`  room ${roomId}:`);
+        console.log(`    player 1 (${p1.substring(0, 8)}...): ${score1}`);
+        console.log(`    player 2 (${p2.substring(0, 8)}...): ${score2}`);
+        hasGames = true;
+      }
+    }
+    if (!hasGames) {
+      console.log('  no active games with 2 players');
+    }
+    console.log('');
+  }
 });

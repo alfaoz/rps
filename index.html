@@ -154,6 +154,12 @@
       opacity: 0.7;
     }
 
+    .debug-info {
+      font-size: 0.7em;
+      margin: 5px 0;
+      opacity: 0.5;
+    }
+
     .score {
       font-size: 0.9em;
       margin: 10px 0;
@@ -165,7 +171,7 @@
       opacity: 1;
     }
 
-    .score.pending-reset {
+    .score.pending-reset, .score.reset-incoming {
       animation: blink 1s ease-in-out infinite;
     }
 
@@ -205,6 +211,7 @@
 
     <!-- Game Screen -->
     <div id="game" class="screen">
+      <div id="debugInfo" class="debug-info" style="display: none;">ping: you <span id="myPing">0</span>ms | them <span id="theirPing">0</span>ms</div>
       <div class="score" id="score" onclick="toggleResetScore()">you: 0 | them: 0</div>
       <div class="timer" id="timer">3</div>
       <div class="status" id="gameStatus">pick one!</div>
@@ -228,6 +235,10 @@
     let myScore = 0;
     let theirScore = 0;
     let myPlayerIndex = null;
+    let debugMode = false;
+    let myPing = 0;
+    let theirPing = 0;
+    let pingInterval = null;
 
     const screens = {
       menu: document.getElementById('menu'),
@@ -251,9 +262,18 @@
         return;
       }
 
-      // easter egg :3
+      // easter eggs :3
       if (roomId.toLowerCase() === 'kiraz') {
         showLoveMessage('i love you!!!! - alfa ♥');
+        return;
+      }
+
+      if (roomId.toLowerCase() === 'debug') {
+        debugMode = true;
+        document.getElementById('debugInfo').style.display = 'block';
+        showError('debug mode enabled :3');
+        document.getElementById('roomInput').value = '';
+        startPingMeasurement();
         return;
       }
 
@@ -354,11 +374,34 @@
       document.getElementById('score').textContent = `you: ${myScore} | them: ${theirScore}`;
     }
 
+    function startPingMeasurement() {
+      if (pingInterval) clearInterval(pingInterval);
+
+      pingInterval = setInterval(() => {
+        const start = Date.now();
+        socket.emit('ping_request', { timestamp: start });
+      }, 1000);
+    }
+
+    function updatePingDisplay() {
+      if (debugMode) {
+        document.getElementById('myPing').textContent = myPing;
+        document.getElementById('theirPing').textContent = theirPing;
+      }
+    }
+
     function toggleResetScore() {
       const scoreDiv = document.getElementById('score');
       const hasPending = scoreDiv.classList.contains('pending-reset');
+      const hasIncoming = scoreDiv.classList.contains('reset-incoming');
 
-      if (hasPending) {
+      if (hasIncoming) {
+        // Agree to incoming reset request
+        scoreDiv.classList.remove('reset-incoming');
+        scoreDiv.classList.add('pending-reset');
+        scoreDiv.textContent = 'resetting...';
+        socket.emit('request_reset', { roomId: currentRoom });
+      } else if (hasPending) {
         // Cancel reset
         scoreDiv.classList.remove('pending-reset');
         updateScore();
@@ -463,12 +506,14 @@
 
     socket.on('reset_requested', () => {
       const scoreDiv = document.getElementById('score');
-      scoreDiv.textContent = 'friend wants to reset!';
+      scoreDiv.textContent = 'friend wants to reset! (click to agree)';
+      scoreDiv.classList.add('reset-incoming');
     });
 
     socket.on('reset_cancelled', () => {
       const scoreDiv = document.getElementById('score');
       scoreDiv.classList.remove('pending-reset');
+      scoreDiv.classList.remove('reset-incoming');
       updateScore();
     });
 
@@ -477,7 +522,29 @@
       theirScore = 0;
       const scoreDiv = document.getElementById('score');
       scoreDiv.classList.remove('pending-reset');
+      scoreDiv.classList.remove('reset-incoming');
       updateScore();
+    });
+
+    socket.on('server_ping', ({ timestamp }) => {
+      // Respond to server ping immediately
+      socket.emit('server_pong', { timestamp });
+
+      // Calculate own ping for debug mode
+      const latency = Date.now() - timestamp;
+      myPing = latency;
+      updatePingDisplay();
+    });
+
+    socket.on('ping_response', ({ timestamp }) => {
+      const latency = Date.now() - timestamp;
+      myPing = latency;
+      updatePingDisplay();
+    });
+
+    socket.on('opponent_ping', ({ ping }) => {
+      theirPing = ping;
+      updatePingDisplay();
     });
 
     // Check for room code in URL
