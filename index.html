@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>rps :3</title>
+  <title>rps by a</title>
   <style>
     * {
       margin: 0;
@@ -181,7 +181,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>rock paper scissors :3</h1>
+    <h1>rock paper scissors!</h1>
 
     <!-- Menu Screen -->
     <div id="menu" class="screen active">
@@ -214,7 +214,7 @@
         <button class="choice-btn" onclick="makeChoice('scissors')">✌️</button>
       </div>
       <div id="result" class="result" style="display: none;"></div>
-      <button onclick="playAgain()" style="display: none;" id="playAgainBtn">play again :3</button>
+      <button onclick="playAgain()" style="display: none;" id="playAgainBtn">play again? :p</button>
     </div>
   </div>
 
@@ -247,7 +247,7 @@
     function joinRoom() {
       const roomId = document.getElementById('roomInput').value.trim();
       if (!roomId) {
-        showError('please enter a room code :3');
+        showError('please enter a room code >:c');
         return;
       }
 
@@ -396,7 +396,7 @@
       const btn = document.getElementById('playAgainBtn');
       btn.style.display = 'none';
       btn.classList.remove('waiting-opponent');
-      btn.textContent = 'play again :3';
+      btn.textContent = 'play again? :p';
       btn.disabled = false;
       document.getElementById('gameStatus').textContent = 'pick one!';
 
@@ -414,7 +414,7 @@
 
     socket.on('opponent_ready', () => {
       const btn = document.getElementById('playAgainBtn');
-      btn.textContent = 'friend is ready! :3';
+      btn.textContent = 'friend is ready :O';
     });
 
     socket.on('game_result', ({ player1, player2, result, timedOut }) => {
@@ -433,7 +433,7 @@
 
         if (myChoice === winner) {
           myScore++;
-          resultText = `${choices[winner]} beats ${choices[loser]}<br><br>you win! :3`;
+          resultText = `${choices[winner]} beats ${choices[loser]}<br><br>you win!!`;
         } else {
           theirScore++;
           resultText = `${choices[winner]} beats ${choices[loser]}<br><br>you lose :'(`;
