@@ -236,12 +236,22 @@
     }
 
     function joinRoom() {
-      const roomId = document.getElementById('roomInput').value.toUpperCase().trim();
+      const roomId = document.getElementById('roomInput').value.trim();
       if (!roomId) {
         showError('please enter a room code :3');
         return;
       }
-      socket.emit('join_room', roomId);
+
+      // easter egg :'*
+      if (roomId.toLowerCase() === 'kiraz') {
+        showError('for kiraz, my cherry :3 ♥');
+        setTimeout(() => {
+          showError('you always win at rock paper scissors in my heart ♥');
+        }, 2000);
+        return;
+      }
+
+      socket.emit('join_room', roomId.toUpperCase());
     }
 
     function startTimer() {
@@ -457,7 +467,15 @@
       const roomCode = urlParams.get('room');
       if (roomCode) {
         document.getElementById('roomInput').value = roomCode;
-        joinRoom();
+
+        // easter egg check for URL too :'*
+        if (roomCode.toLowerCase() === 'kiraz') {
+          setTimeout(() => {
+            joinRoom();
+          }, 100);
+        } else {
+          joinRoom();
+        }
       }
     });
   </script>
