@@ -155,19 +155,17 @@
     }
 
     .score {
-      font-size: 1.3em;
-      margin: 15px 0;
-      padding: 10px;
-      border: 2px solid white;
-    }
-
-    .reset-btn {
       font-size: 0.9em;
-      padding: 8px 15px;
-      margin-top: 10px;
+      margin: 10px 0;
+      cursor: pointer;
+      opacity: 0.7;
     }
 
-    .reset-btn.pending-reset {
+    .score:hover {
+      opacity: 1;
+    }
+
+    .score.pending-reset {
       animation: blink 1s ease-in-out infinite;
     }
   </style>
@@ -198,7 +196,7 @@
 
     <!-- Game Screen -->
     <div id="game" class="screen">
-      <div class="score" id="score">you: 0 | them: 0</div>
+      <div class="score" id="score" onclick="toggleResetScore()">you: 0 | them: 0</div>
       <div class="timer" id="timer">3</div>
       <div class="status" id="gameStatus">pick one!</div>
       <div>
@@ -208,8 +206,6 @@
       </div>
       <div id="result" class="result" style="display: none;"></div>
       <button onclick="playAgain()" style="display: none;" id="playAgainBtn">play again :3</button>
-      <br>
-      <button onclick="toggleResetScore()" class="reset-btn" id="resetBtn" style="display: none;">reset score</button>
     </div>
   </div>
 
@@ -330,18 +326,18 @@
     }
 
     function toggleResetScore() {
-      const btn = document.getElementById('resetBtn');
-      const hasPending = btn.classList.contains('pending-reset');
+      const scoreDiv = document.getElementById('score');
+      const hasPending = scoreDiv.classList.contains('pending-reset');
 
       if (hasPending) {
         // Cancel reset
-        btn.classList.remove('pending-reset');
-        btn.textContent = 'reset score';
+        scoreDiv.classList.remove('pending-reset');
+        updateScore();
         socket.emit('cancel_reset', { roomId: currentRoom });
       } else {
         // Request reset
-        btn.classList.add('pending-reset');
-        btn.textContent = 'waiting for friend...';
+        scoreDiv.classList.add('pending-reset');
+        scoreDiv.textContent = 'waiting for friend...';
         socket.emit('request_reset', { roomId: currentRoom });
       }
     }
@@ -419,7 +415,6 @@
       resultDiv.innerHTML = resultText;
       resultDiv.style.display = 'block';
       document.getElementById('playAgainBtn').style.display = 'inline-block';
-      document.getElementById('resetBtn').style.display = 'inline-block';
       document.getElementById('gameStatus').textContent = '';
     });
 
@@ -438,23 +433,22 @@
     });
 
     socket.on('reset_requested', () => {
-      const btn = document.getElementById('resetBtn');
-      btn.textContent = 'friend wants to reset!';
+      const scoreDiv = document.getElementById('score');
+      scoreDiv.textContent = 'friend wants to reset!';
     });
 
     socket.on('reset_cancelled', () => {
-      const btn = document.getElementById('resetBtn');
-      btn.classList.remove('pending-reset');
-      btn.textContent = 'reset score';
+      const scoreDiv = document.getElementById('score');
+      scoreDiv.classList.remove('pending-reset');
+      updateScore();
     });
 
     socket.on('score_reset', () => {
       myScore = 0;
       theirScore = 0;
+      const scoreDiv = document.getElementById('score');
+      scoreDiv.classList.remove('pending-reset');
       updateScore();
-      const btn = document.getElementById('resetBtn');
-      btn.classList.remove('pending-reset');
-      btn.textContent = 'reset score';
     });
 
     // Check for room code in URL
