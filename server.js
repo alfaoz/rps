@@ -12,7 +12,7 @@ app.use(express.static(__dirname));
 const rooms = {};
 
 function generateRoomId() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
+  return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
 
 io.on('connection', (socket) => {
