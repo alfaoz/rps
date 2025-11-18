@@ -254,7 +254,7 @@
       buttons[choiceMap[choice]].classList.add('selected');
 
       if (auto) {
-        document.getElementById('gameStatus').textContent = 'time up! auto-picked :'*';
+        document.getElementById('gameStatus').textContent = "time up! auto-picked :'*";
       } else {
         document.getElementById('gameStatus').textContent = 'waiting for friend...';
       }
@@ -352,7 +352,7 @@
 
     socket.on('player_left', () => {
       if (timerInterval) clearInterval(timerInterval);
-      showError('friend left the game :'(');
+      showError("friend left the game :'(");
       setTimeout(() => {
         showScreen('menu');
         currentRoom = null;
