@@ -79,6 +79,9 @@ io.on('connection', (socket) => {
 
     room.ready[socket.id] = true;
 
+    // Notify the other player that this player is ready
+    socket.to(roomId).emit('opponent_ready');
+
     if (Object.keys(room.ready).length === 2) {
       room.ready = {};
       io.to(roomId).emit('start_round');
