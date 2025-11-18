@@ -20,12 +20,36 @@
       justify-content: center;
       align-items: center;
       padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    body.cherry-mode::before {
+      content: '🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒 🍒';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 200%;
+      height: 100%;
+      font-size: 3em;
+      opacity: 0.15;
+      z-index: -1;
+      animation: cherryScroll 20s linear infinite;
+      white-space: nowrap;
+      line-height: 1.5;
+    }
+
+    @keyframes cherryScroll {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
     }
 
     .container {
       max-width: 500px;
       width: 100%;
       text-align: center;
+      position: relative;
+      z-index: 1;
     }
 
     h1 {
@@ -228,7 +252,7 @@
     };
 
     const normalEmojis = { rock: '✊', paper: '✋', scissors: '✌️' };
-    const cherryEmojis = { rock: '🍒', paper: '🍒🍒', scissors: '🍒🍒🍒' };
+    const cherryEmojis = { rock: '🍒', paper: '🍒', scissors: '🍒' };
 
     function showScreen(screenName) {
       Object.values(screens).forEach(screen => screen.classList.remove('active'));
@@ -241,6 +265,7 @@
       const roomParam = urlParams.get('room');
       if (roomParam && roomParam.toLowerCase() === 'cherry') {
         cherryMode = true;
+        document.body.classList.add('cherry-mode');
       }
       socket.emit('create_room');
     }
@@ -261,6 +286,8 @@
       // cherry mode easter egg
       if (roomId.toLowerCase() === 'cherry') {
         cherryMode = true;
+        document.body.classList.add('cherry-mode');
+        showError('cherry unlocked 🍒');
         updateButtonEmojis();
         socket.emit('join_room', roomId.toUpperCase());
         return;
