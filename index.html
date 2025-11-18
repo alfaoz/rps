@@ -219,6 +219,7 @@
     let myScore = 0;
     let theirScore = 0;
     let myPlayerIndex = null;
+    let cherryMode = false;
 
     const screens = {
       menu: document.getElementById('menu'),
@@ -226,12 +227,21 @@
       game: document.getElementById('game')
     };
 
+    const normalEmojis = { rock: '✊', paper: '✋', scissors: '✌️' };
+    const cherryEmojis = { rock: '🍒', paper: '🍒🍒', scissors: '🍒🍒🍒' };
+
     function showScreen(screenName) {
       Object.values(screens).forEach(screen => screen.classList.remove('active'));
       screens[screenName].classList.add('active');
     }
 
     function createRoom() {
+      // check if cherry mode should be enabled from URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room');
+      if (roomParam && roomParam.toLowerCase() === 'cherry') {
+        cherryMode = true;
+      }
       socket.emit('create_room');
     }
 
@@ -248,7 +258,23 @@
         return;
       }
 
+      // cherry mode easter egg
+      if (roomId.toLowerCase() === 'cherry') {
+        cherryMode = true;
+        updateButtonEmojis();
+        socket.emit('join_room', roomId.toUpperCase());
+        return;
+      }
+
       socket.emit('join_room', roomId.toUpperCase());
+    }
+
+    function updateButtonEmojis() {
+      const emojis = cherryMode ? cherryEmojis : normalEmojis;
+      const buttons = document.querySelectorAll('.choice-btn');
+      buttons[0].textContent = emojis.rock;
+      buttons[1].textContent = emojis.paper;
+      buttons[2].textContent = emojis.scissors;
     }
 
     function startTimer() {
@@ -359,11 +385,13 @@
     socket.on('room_joined', (roomId) => {
       currentRoom = roomId;
       showScreen('game');
+      updateButtonEmojis();
     });
 
     socket.on('player_joined', ({ playerCount }) => {
       if (playerCount === 2) {
         showScreen('game');
+        updateButtonEmojis();
         setTimeout(startTimer, 1000);
       }
     });
@@ -398,7 +426,7 @@
     socket.on('game_result', ({ player1, player2, result, timedOut }) => {
       if (timerInterval) clearInterval(timerInterval);
 
-      const choices = { rock: '✊', paper: '✋', scissors: '✌️' };
+      const choices = cherryMode ? cherryEmojis : normalEmojis;
       const resultDiv = document.getElementById('result');
 
       let resultText = '';
