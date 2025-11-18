@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rps :3</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: monospace;
+      background: black;
+      color: white;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 500px;
+      width: 100%;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 1.5em;
+      margin-bottom: 30px;
+      font-weight: normal;
+    }
+
+    .screen {
+      display: none;
+    }
+
+    .screen.active {
+      display: block;
+    }
+
+    button {
+      font-family: monospace;
+      background: white;
+      color: black;
+      border: 2px solid white;
+      padding: 10px 20px;
+      font-size: 1em;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+
+    button:hover {
+      background: black;
+      color: white;
+    }
+
+    button:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .choice-btn {
+      font-size: 3em;
+      width: 80px;
+      height: 80px;
+      padding: 0;
+      margin: 10px;
+      background: black;
+      color: white;
+      border: 2px solid white;
+    }
+
+    .choice-btn:hover:not(:disabled) {
+      background: white;
+      color: black;
+    }
+
+    .choice-btn.selected {
+      background: white;
+      color: black;
+    }
+
+    input {
+      font-family: monospace;
+      background: black;
+      border: 2px solid white;
+      color: white;
+      padding: 10px;
+      font-size: 1em;
+      text-align: center;
+      width: 150px;
+      margin: 10px;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: white;
+    }
+
+    .share-link {
+      border: 2px solid white;
+      padding: 15px;
+      margin: 20px 0;
+      cursor: pointer;
+    }
+
+    .share-link:hover {
+      background: white;
+      color: black;
+    }
+
+    .status {
+      font-size: 1.2em;
+      margin: 20px 0;
+      min-height: 30px;
+    }
+
+    .result {
+      font-size: 1.5em;
+      margin: 30px 0;
+      padding: 20px;
+      border: 2px solid white;
+    }
+
+    .error {
+      margin: 20px 0;
+      padding: 15px;
+      border: 2px solid white;
+    }
+
+    .timer {
+      font-size: 2em;
+      margin: 20px 0;
+      font-weight: bold;
+    }
+
+    small {
+      font-size: 0.8em;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>rock paper scissors :3</h1>
+
+    <!-- Menu Screen -->
+    <div id="menu" class="screen active">
+      <button onclick="createRoom()">create game</button>
+      <br>
+      <input type="text" id="roomInput" placeholder="room code">
+      <br>
+      <button onclick="joinRoom()">join game</button>
+      <div id="menuError" class="error" style="display: none;"></div>
+    </div>
+
+    <!-- Waiting Screen -->
+    <div id="waiting" class="screen">
+      <div class="status">room code:</div>
+      <div class="share-link" id="shareLink" onclick="copyLink()">
+        <div id="roomCode"></div>
+        <small>click to copy link :'*</small>
+      </div>
+      <div class="status">waiting for friend...</div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game" class="screen">
+      <div class="timer" id="timer">10</div>
+      <div class="status" id="gameStatus">pick one!</div>
+      <div>
+        <button class="choice-btn" onclick="makeChoice('rock')">✊</button>
+        <button class="choice-btn" onclick="makeChoice('paper')">✋</button>
+        <button class="choice-btn" onclick="makeChoice('scissors')">✌️</button>
+      </div>
+      <div id="result" class="result" style="display: none;"></div>
+      <button onclick="playAgain()" style="display: none;" id="playAgainBtn">play again :3</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let currentRoom = null;
+    let myChoice = null;
+    let timerInterval = null;
+    let timeLeft = 10;
+
+    const screens = {
+      menu: document.getElementById('menu'),
+      waiting: document.getElementById('waiting'),
+      game: document.getElementById('game')
+    };
+
+    function showScreen(screenName) {
+      Object.values(screens).forEach(screen => screen.classList.remove('active'));
+      screens[screenName].classList.add('active');
+    }
+
+    function createRoom() {
+      socket.emit('create_room');
+    }
+
+    function joinRoom() {
+      const roomId = document.getElementById('roomInput').value.toUpperCase().trim();
+      if (!roomId) {
+        showError('please enter a room code :3');
+        return;
+      }
+      socket.emit('join_room', roomId);
+    }
+
+    function startTimer() {
+      timeLeft = 10;
+      document.getElementById('timer').textContent = timeLeft;
+
+      if (timerInterval) clearInterval(timerInterval);
+
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        document.getElementById('timer').textContent = timeLeft;
+
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          if (!myChoice) {
+            // auto-select random choice if time runs out
+            const choices = ['rock', 'paper', 'scissors'];
+            const randomChoice = choices[Math.floor(Math.random() * choices.length)];
+            makeChoice(randomChoice, true);
+          }
+        }
+      }, 1000);
+    }
+
+    function makeChoice(choice, auto = false) {
+      if (myChoice) return;
+
+      myChoice = choice;
+      socket.emit('make_choice', { roomId: currentRoom, choice });
+
+      if (timerInterval) clearInterval(timerInterval);
+
+      document.querySelectorAll('.choice-btn').forEach(btn => {
+        btn.classList.remove('selected');
+        btn.disabled = true;
+      });
+
+      const buttons = document.querySelectorAll('.choice-btn');
+      const choiceMap = { rock: 0, paper: 1, scissors: 2 };
+      buttons[choiceMap[choice]].classList.add('selected');
+
+      if (auto) {
+        document.getElementById('gameStatus').textContent = 'time up! auto-picked :'*';
+      } else {
+        document.getElementById('gameStatus').textContent = 'waiting for friend...';
+      }
+      document.getElementById('timer').textContent = '-';
+    }
+
+    function playAgain() {
+      myChoice = null;
+      document.getElementById('result').style.display = 'none';
+      document.getElementById('playAgainBtn').style.display = 'none';
+      document.getElementById('gameStatus').textContent = 'pick one!';
+
+      document.querySelectorAll('.choice-btn').forEach(btn => {
+        btn.classList.remove('selected');
+        btn.disabled = false;
+      });
+
+      socket.emit('ready_for_next', { roomId: currentRoom });
+    }
+
+    function copyLink() {
+      const url = window.location.href.split('?')[0] + '?room=' + currentRoom;
+      navigator.clipboard.writeText(url).then(() => {
+        const linkDiv = document.getElementById('shareLink');
+        const code = currentRoom;
+        linkDiv.innerHTML = '<div>copied! :3</div>';
+        setTimeout(() => {
+          linkDiv.innerHTML = `<div id="roomCode">${code}</div><small>click to copy link :'*</small>`;
+        }, 1500);
+      });
+    }
+
+    function showError(message) {
+      const errorDiv = document.getElementById('menuError');
+      errorDiv.textContent = message;
+      errorDiv.style.display = 'block';
+      setTimeout(() => {
+        errorDiv.style.display = 'none';
+      }, 3000);
+    }
+
+    // Socket event listeners
+    socket.on('room_created', (roomId) => {
+      currentRoom = roomId;
+      document.getElementById('roomCode').textContent = roomId;
+      showScreen('waiting');
+    });
+
+    socket.on('room_joined', (roomId) => {
+      currentRoom = roomId;
+      showScreen('game');
+    });
+
+    socket.on('player_joined', ({ playerCount }) => {
+      if (playerCount === 2) {
+        showScreen('game');
+        setTimeout(startTimer, 1000);
+      }
+    });
+
+    socket.on('start_round', () => {
+      startTimer();
+    });
+
+    socket.on('player_ready', ({ player }) => {
+      console.log(`player ${player} ready`);
+    });
+
+    socket.on('game_result', ({ player1, player2, result, timedOut }) => {
+      if (timerInterval) clearInterval(timerInterval);
+
+      const choices = { rock: '✊', paper: '✋', scissors: '✌️' };
+      const resultDiv = document.getElementById('result');
+
+      let resultText = '';
+
+      if (result === 'tie') {
+        resultText = `${choices[player1]} vs ${choices[player2]}<br><br>tie! :'*`;
+      } else {
+        const winner = result === 'player1' ? player1 : player2;
+        const loser = result === 'player1' ? player2 : player1;
+
+        if (myChoice === winner) {
+          resultText = `${choices[winner]} beats ${choices[loser]}<br><br>you win! :3`;
+        } else {
+          resultText = `${choices[winner]} beats ${choices[loser]}<br><br>you lose :'(`;
+        }
+      }
+
+      resultDiv.innerHTML = resultText;
+      resultDiv.style.display = 'block';
+      document.getElementById('playAgainBtn').style.display = 'inline-block';
+      document.getElementById('gameStatus').textContent = '';
+    });
+
+    socket.on('player_left', () => {
+      if (timerInterval) clearInterval(timerInterval);
+      showError('friend left the game :'(');
+      setTimeout(() => {
+        showScreen('menu');
+        currentRoom = null;
+        myChoice = null;
+      }, 2000);
+    });
+
+    socket.on('error', (message) => {
+      showError(message);
+    });
+
+    // Check for room code in URL
+    window.addEventListener('load', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomCode = urlParams.get('room');
+      if (roomCode) {
+        document.getElementById('roomInput').value = roomCode;
+        joinRoom();
+      }
+    });
+  </script>
+</body>
+</html>
