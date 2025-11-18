@@ -23,7 +23,8 @@ io.on('connection', (socket) => {
     rooms[roomId] = {
       players: [socket.id],
       choices: {},
-      ready: {}
+      ready: {},
+      resetRequests: {}
     };
     socket.join(roomId);
     socket.emit('room_created', roomId);
@@ -86,6 +87,32 @@ io.on('connection', (socket) => {
       room.ready = {};
       io.to(roomId).emit('start_round');
     }
+  });
+
+  socket.on('request_reset', ({ roomId }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    room.resetRequests[socket.id] = true;
+
+    // Notify the other player
+    socket.to(roomId).emit('reset_requested');
+
+    // If both players want to reset
+    if (Object.keys(room.resetRequests).length === 2) {
+      room.resetRequests = {};
+      io.to(roomId).emit('score_reset');
+    }
+  });
+
+  socket.on('cancel_reset', ({ roomId }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    delete room.resetRequests[socket.id];
+
+    // Notify the other player
+    socket.to(roomId).emit('reset_cancelled');
   });
 
   socket.on('disconnect', () => {

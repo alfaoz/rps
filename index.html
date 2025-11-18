@@ -153,6 +153,23 @@
       font-size: 0.8em;
       opacity: 0.7;
     }
+
+    .score {
+      font-size: 1.3em;
+      margin: 15px 0;
+      padding: 10px;
+      border: 2px solid white;
+    }
+
+    .reset-btn {
+      font-size: 0.9em;
+      padding: 8px 15px;
+      margin-top: 10px;
+    }
+
+    .reset-btn.pending-reset {
+      animation: blink 1s ease-in-out infinite;
+    }
   </style>
 </head>
 <body>
@@ -181,6 +198,7 @@
 
     <!-- Game Screen -->
     <div id="game" class="screen">
+      <div class="score" id="score">you: 0 | them: 0</div>
       <div class="timer" id="timer">3</div>
       <div class="status" id="gameStatus">pick one!</div>
       <div>
@@ -190,6 +208,8 @@
       </div>
       <div id="result" class="result" style="display: none;"></div>
       <button onclick="playAgain()" style="display: none;" id="playAgainBtn">play again :3</button>
+      <br>
+      <button onclick="toggleResetScore()" class="reset-btn" id="resetBtn" style="display: none;">reset score</button>
     </div>
   </div>
 
@@ -200,6 +220,9 @@
     let myChoice = null;
     let timerInterval = null;
     let timeLeft = 3;
+    let myScore = 0;
+    let theirScore = 0;
+    let myPlayerIndex = null;
 
     const screens = {
       menu: document.getElementById('menu'),
@@ -302,6 +325,27 @@
       }, 3000);
     }
 
+    function updateScore() {
+      document.getElementById('score').textContent = `you: ${myScore} | them: ${theirScore}`;
+    }
+
+    function toggleResetScore() {
+      const btn = document.getElementById('resetBtn');
+      const hasPending = btn.classList.contains('pending-reset');
+
+      if (hasPending) {
+        // Cancel reset
+        btn.classList.remove('pending-reset');
+        btn.textContent = 'reset score';
+        socket.emit('cancel_reset', { roomId: currentRoom });
+      } else {
+        // Request reset
+        btn.classList.add('pending-reset');
+        btn.textContent = 'waiting for friend...';
+        socket.emit('request_reset', { roomId: currentRoom });
+      }
+    }
+
     // Socket event listeners
     socket.on('room_created', (roomId) => {
       currentRoom = roomId;
@@ -363,15 +407,19 @@
         const loser = result === 'player1' ? player2 : player1;
 
         if (myChoice === winner) {
+          myScore++;
           resultText = `${choices[winner]} beats ${choices[loser]}<br><br>you win! :3`;
         } else {
+          theirScore++;
           resultText = `${choices[winner]} beats ${choices[loser]}<br><br>you lose :'(`;
         }
       }
 
+      updateScore();
       resultDiv.innerHTML = resultText;
       resultDiv.style.display = 'block';
       document.getElementById('playAgainBtn').style.display = 'inline-block';
+      document.getElementById('resetBtn').style.display = 'inline-block';
       document.getElementById('gameStatus').textContent = '';
     });
 
@@ -387,6 +435,26 @@
 
     socket.on('error', (message) => {
       showError(message);
+    });
+
+    socket.on('reset_requested', () => {
+      const btn = document.getElementById('resetBtn');
+      btn.textContent = 'friend wants to reset!';
+    });
+
+    socket.on('reset_cancelled', () => {
+      const btn = document.getElementById('resetBtn');
+      btn.classList.remove('pending-reset');
+      btn.textContent = 'reset score';
+    });
+
+    socket.on('score_reset', () => {
+      myScore = 0;
+      theirScore = 0;
+      updateScore();
+      const btn = document.getElementById('resetBtn');
+      btn.classList.remove('pending-reset');
+      btn.textContent = 'reset score';
     });
 
     // Check for room code in URL
