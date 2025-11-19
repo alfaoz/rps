@@ -360,7 +360,6 @@
     let selectedChoice = null;
     let timerInterval = null;
     let timeLeft = 3;
-    let roundStartTime = null;
     let myScore = 0;
     let theirScore = 0;
     let winStreak = 0;
@@ -410,14 +409,14 @@
       socket.emit('join_room', roomId.toUpperCase());
     }
 
-    function startTimer(serverStartTime) {
-      roundStartTime = serverStartTime || Date.now();
+    function startTimer() {
+      timeLeft = 3;
+      document.getElementById('timer').textContent = timeLeft;
 
       if (timerInterval) clearInterval(timerInterval);
 
-      const updateTimer = () => {
-        const elapsed = (Date.now() - roundStartTime) / 1000;
-        timeLeft = Math.max(0, Math.ceil(3 - elapsed));
+      timerInterval = setInterval(() => {
+        timeLeft--;
         document.getElementById('timer').textContent = timeLeft;
 
         if (timeLeft <= 0) {
@@ -433,10 +432,7 @@
             }
           }
         }
-      };
-
-      updateTimer();
-      timerInterval = setInterval(updateTimer, 100); // Update more frequently for smoothness
+      }, 1000);
     }
 
     function selectChoice(choice) {
@@ -645,14 +641,14 @@
       showScreen('game');
     });
 
-    socket.on('player_joined', ({ playerCount, startTime }) => {
+    socket.on('player_joined', ({ playerCount }) => {
       if (playerCount === 2) {
         showScreen('game');
-        setTimeout(() => startTimer(startTime), 1000);
+        setTimeout(startTimer, 1000);
       }
     });
 
-    socket.on('start_round', ({ startTime }) => {
+    socket.on('start_round', () => {
       myChoice = null;
       selectedChoice = null;
       document.getElementById('result').style.display = 'none';
@@ -669,7 +665,7 @@
         btn.disabled = false;
       });
 
-      startTimer(startTime);
+      startTimer();
     });
 
     socket.on('player_ready', ({ player }) => {
