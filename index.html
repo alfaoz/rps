@@ -206,7 +206,8 @@
 
     .reactions {
       display: none;
-      margin: 10px 0;
+      margin: 15px 0 10px 0;
+      opacity: 0.4;
     }
 
     .reactions.active {
@@ -214,20 +215,22 @@
     }
 
     .reaction-btn {
-      font-size: 1.5em;
-      width: 45px;
-      height: 45px;
-      padding: 0;
-      margin: 3px;
-      background: black;
+      font-size: 1.3em;
+      background: none;
+      border: none;
       color: white;
-      border: 2px solid white;
       cursor: pointer;
+      padding: 0 8px;
     }
 
     .reaction-btn:hover {
-      background: white;
-      transform: scale(1.1);
+      opacity: 1;
+      transform: scale(1.2);
+    }
+
+    .reaction-separator {
+      opacity: 0.3;
+      margin: 0 2px;
     }
 
     .reaction-display {
@@ -340,14 +343,10 @@
         <button class="choice-btn" onclick="selectChoice('paper')">✋</button>
         <button class="choice-btn" onclick="selectChoice('scissors')">✌️</button>
       </div>
-      <div class="reactions" id="reactions">
-        <button class="reaction-btn" onclick="sendReaction('❤️')">❤️</button>
-        <button class="reaction-btn" onclick="sendReaction('🔥')">🔥</button>
-        <button class="reaction-btn" onclick="sendReaction('😭')">😭</button>
-        <button class="reaction-btn" onclick="sendReaction('😔')">😔</button>
-        <button class="reaction-btn" onclick="sendReaction('😵‍💫')">😵‍💫</button>
-      </div>
       <div id="result" class="result" style="display: none;"></div>
+      <div class="reactions" id="reactions">
+        <button class="reaction-btn" onclick="sendReaction('❤️')">❤️</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('🔥')">🔥</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😭')">😭</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😔')">😔</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😵‍💫')">😵‍💫</button>
+      </div>
       <button onclick="playAgain()" style="display: none;" id="playAgainBtn">play again? :p</button>
     </div>
   </div>
