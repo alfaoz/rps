@@ -14,7 +14,12 @@ const rooms = {};
 const playerPings = {};
 
 function generateRoomId() {
-  return Math.random().toString(36).substring(2, 7).toUpperCase();
+  const chars = 'ABCDEFGHJKLMNOPQRSTUVWXYZ0123456789'; // Excludes I to avoid confusion
+  let result = '';
+  for (let i = 0; i < 5; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
 }
 
 io.on('connection', (socket) => {
