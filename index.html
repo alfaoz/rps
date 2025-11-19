@@ -134,15 +134,23 @@
     }
 
     .result {
-      font-size: 1.5em;
-      margin: 15px 0;
-      padding: 15px;
-      border: 2px solid white;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: black;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
     }
 
     .battle-emoji {
       font-size: 5em;
-      margin: 15px 0;
+      margin: 10px 0;
       opacity: 0.7;
       transition: all 0.3s ease;
     }
@@ -156,6 +164,16 @@
       font-size: 0.9em;
       opacity: 0.6;
       margin-top: -10px;
+    }
+
+    .battle-outcome {
+      font-size: 1.5em;
+      margin: 20px 0;
+    }
+
+    #playAgainBtn {
+      position: relative;
+      z-index: 1001;
     }
 
     .error {
