@@ -57,10 +57,18 @@ io.on('connection', (socket) => {
     if (room.players.length === 2) {
       room.scores[room.players[0]] = 0;
       room.scores[room.players[1]] = 0;
+
+      // Send synchronized start time when both players join
+      const startTime = Date.now() + 1000; // Start in 1 second
+      io.to(roomId).emit('player_joined', {
+        playerCount: room.players.length,
+        startTime: startTime
+      });
+    } else {
+      socket.emit('room_joined', roomId);
+      io.to(roomId).emit('player_joined', { playerCount: room.players.length });
     }
 
-    socket.emit('room_joined', roomId);
-    io.to(roomId).emit('player_joined', { playerCount: room.players.length });
     console.log('Player joined room:', roomId);
   });
 
@@ -108,7 +116,8 @@ io.on('connection', (socket) => {
 
     if (Object.keys(room.ready).length === 2) {
       room.ready = {};
-      io.to(roomId).emit('start_round');
+      const startTime = Date.now();
+      io.to(roomId).emit('start_round', { startTime });
     }
   });
 

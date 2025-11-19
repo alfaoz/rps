@@ -194,25 +194,9 @@
       50% { opacity: 0.8; transform: scale(1.05); }
     }
 
-    .choice-btn.preview {
+    .choice-btn.selected {
       background: white;
       color: black;
-      opacity: 0.6;
-      border: 3px solid white;
-    }
-
-    #confirmBtn {
-      display: none;
-      background: white;
-      color: black;
-      font-size: 1.2em;
-      padding: 15px 30px;
-      margin-top: 10px;
-    }
-
-    #confirmBtn:hover {
-      background: black;
-      color: white;
     }
 
     #playAgainBtn {
@@ -352,11 +336,10 @@
       <div class="timer" id="timer">3</div>
       <div class="status" id="gameStatus">pick one!</div>
       <div>
-        <button class="choice-btn" onclick="previewChoice('rock')">✊</button>
-        <button class="choice-btn" onclick="previewChoice('paper')">✋</button>
-        <button class="choice-btn" onclick="previewChoice('scissors')">✌️</button>
+        <button class="choice-btn" onclick="selectChoice('rock')">✊</button>
+        <button class="choice-btn" onclick="selectChoice('paper')">✋</button>
+        <button class="choice-btn" onclick="selectChoice('scissors')">✌️</button>
       </div>
-      <button id="confirmBtn" onclick="confirmChoice()">confirm!</button>
       <div class="reactions" id="reactions">
         <button class="reaction-btn" onclick="sendReaction('❤️')">❤️</button>
         <button class="reaction-btn" onclick="sendReaction('🔥')">🔥</button>
@@ -374,9 +357,10 @@
     const socket = io();
     let currentRoom = null;
     let myChoice = null;
-    let previewedChoice = null;
+    let selectedChoice = null;
     let timerInterval = null;
     let timeLeft = 3;
+    let roundStartTime = null;
     let myScore = 0;
     let theirScore = 0;
     let winStreak = 0;
@@ -426,73 +410,63 @@
       socket.emit('join_room', roomId.toUpperCase());
     }
 
-    function startTimer() {
-      timeLeft = 3;
-      document.getElementById('timer').textContent = timeLeft;
+    function startTimer(serverStartTime) {
+      roundStartTime = serverStartTime || Date.now();
 
       if (timerInterval) clearInterval(timerInterval);
 
-      timerInterval = setInterval(() => {
-        timeLeft--;
+      const updateTimer = () => {
+        const elapsed = (Date.now() - roundStartTime) / 1000;
+        timeLeft = Math.max(0, Math.ceil(3 - elapsed));
         document.getElementById('timer').textContent = timeLeft;
 
         if (timeLeft <= 0) {
           clearInterval(timerInterval);
           if (!myChoice) {
-            // If there's a previewed choice, confirm it
-            if (previewedChoice) {
-              makeChoice(previewedChoice, true);
+            // Auto-submit selected choice or pick random
+            if (selectedChoice) {
+              makeChoice(selectedChoice, true);
             } else {
-              // auto-select random choice if time runs out
               const choices = ['rock', 'paper', 'scissors'];
               const randomChoice = choices[Math.floor(Math.random() * choices.length)];
               makeChoice(randomChoice, true);
             }
           }
         }
-      }, 1000);
+      };
+
+      updateTimer();
+      timerInterval = setInterval(updateTimer, 100); // Update more frequently for smoothness
     }
 
-    function previewChoice(choice) {
-      if (myChoice) return; // Already confirmed
+    function selectChoice(choice) {
+      if (myChoice) return; // Already submitted
 
-      previewedChoice = choice;
+      selectedChoice = choice;
 
       // Update button states
       document.querySelectorAll('.choice-btn').forEach(btn => {
-        btn.classList.remove('preview');
+        btn.classList.remove('selected');
       });
 
       const buttons = document.querySelectorAll('.choice-btn');
       const choiceMap = { rock: 0, paper: 1, scissors: 2 };
-      buttons[choiceMap[choice]].classList.add('preview');
+      buttons[choiceMap[choice]].classList.add('selected');
 
-      // Show confirm button
-      document.getElementById('confirmBtn').style.display = 'inline-block';
-      document.getElementById('gameStatus').textContent = 'click confirm or change choice';
-    }
-
-    function confirmChoice() {
-      if (!previewedChoice || myChoice) return;
-
-      makeChoice(previewedChoice, false);
+      document.getElementById('gameStatus').textContent = 'selected! (can change)';
     }
 
     function makeChoice(choice, auto = false) {
       if (myChoice) return;
 
       myChoice = choice;
-      previewedChoice = null;
+      selectedChoice = null;
       socket.emit('make_choice', { roomId: currentRoom, choice });
 
       if (timerInterval) clearInterval(timerInterval);
 
-      // Hide confirm button
-      document.getElementById('confirmBtn').style.display = 'none';
-
       document.querySelectorAll('.choice-btn').forEach(btn => {
         btn.classList.remove('selected');
-        btn.classList.remove('preview');
         btn.disabled = true;
       });
 
@@ -671,18 +645,17 @@
       showScreen('game');
     });
 
-    socket.on('player_joined', ({ playerCount }) => {
+    socket.on('player_joined', ({ playerCount, startTime }) => {
       if (playerCount === 2) {
         showScreen('game');
-        setTimeout(startTimer, 1000);
+        setTimeout(() => startTimer(startTime), 1000);
       }
     });
 
-    socket.on('start_round', () => {
+    socket.on('start_round', ({ startTime }) => {
       myChoice = null;
-      previewedChoice = null;
+      selectedChoice = null;
       document.getElementById('result').style.display = 'none';
-      document.getElementById('confirmBtn').style.display = 'none';
       document.getElementById('reactions').classList.remove('active');
       const btn = document.getElementById('playAgainBtn');
       btn.style.display = 'none';
@@ -693,11 +666,10 @@
 
       document.querySelectorAll('.choice-btn').forEach(btn => {
         btn.classList.remove('selected');
-        btn.classList.remove('preview');
         btn.disabled = false;
       });
 
-      startTimer();
+      startTimer(startTime);
     });
 
     socket.on('player_ready', ({ player }) => {
