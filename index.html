@@ -143,9 +143,9 @@
       z-index: 1000;
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      justify-content: flex-start;
       align-items: center;
-      padding: 20px;
+      padding: 40px 20px 20px;
     }
 
     .battle-emoji {
@@ -167,8 +167,52 @@
     }
 
     .battle-outcome {
-      font-size: 1.5em;
+      font-size: 2.5em;
       margin: 20px 0;
+      font-weight: bold;
+    }
+
+    .battle-score {
+      font-size: 1em;
+      opacity: 0.7;
+      margin-top: 10px;
+    }
+
+    .win-streak {
+      font-size: 1.2em;
+      margin-top: 5px;
+      color: white;
+      font-weight: bold;
+    }
+
+    .win-streak.active {
+      animation: pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.8; transform: scale(1.05); }
+    }
+
+    .choice-btn.preview {
+      background: white;
+      color: black;
+      opacity: 0.6;
+      border: 3px solid white;
+    }
+
+    #confirmBtn {
+      display: none;
+      background: white;
+      color: black;
+      font-size: 1.2em;
+      padding: 15px 30px;
+      margin-top: 10px;
+    }
+
+    #confirmBtn:hover {
+      background: black;
+      color: white;
     }
 
     #playAgainBtn {
@@ -252,13 +296,15 @@
     <div id="game" class="screen">
       <div id="debugInfo" class="debug-info" style="display: none;">ping: you <span id="myPing">0</span>ms | them <span id="theirPing">0</span>ms</div>
       <div class="score" id="score" onclick="toggleResetScore()">you: 0 | them: 0</div>
+      <div class="win-streak" id="winStreak" style="display: none;"></div>
       <div class="timer" id="timer">3</div>
       <div class="status" id="gameStatus">pick one!</div>
       <div>
-        <button class="choice-btn" onclick="makeChoice('rock')">✊</button>
-        <button class="choice-btn" onclick="makeChoice('paper')">✋</button>
-        <button class="choice-btn" onclick="makeChoice('scissors')">✌️</button>
+        <button class="choice-btn" onclick="previewChoice('rock')">✊</button>
+        <button class="choice-btn" onclick="previewChoice('paper')">✋</button>
+        <button class="choice-btn" onclick="previewChoice('scissors')">✌️</button>
       </div>
+      <button id="confirmBtn" onclick="confirmChoice()">confirm!</button>
       <div id="result" class="result" style="display: none;"></div>
       <button onclick="playAgain()" style="display: none;" id="playAgainBtn">play again? :p</button>
     </div>
@@ -269,10 +315,12 @@
     const socket = io();
     let currentRoom = null;
     let myChoice = null;
+    let previewedChoice = null;
     let timerInterval = null;
     let timeLeft = 3;
     let myScore = 0;
     let theirScore = 0;
+    let winStreak = 0;
     let myPlayerIndex = null;
     let debugMode = false;
     let myPing = 0;
@@ -332,25 +380,60 @@
         if (timeLeft <= 0) {
           clearInterval(timerInterval);
           if (!myChoice) {
-            // auto-select random choice if time runs out
-            const choices = ['rock', 'paper', 'scissors'];
-            const randomChoice = choices[Math.floor(Math.random() * choices.length)];
-            makeChoice(randomChoice, true);
+            // If there's a previewed choice, confirm it
+            if (previewedChoice) {
+              makeChoice(previewedChoice, true);
+            } else {
+              // auto-select random choice if time runs out
+              const choices = ['rock', 'paper', 'scissors'];
+              const randomChoice = choices[Math.floor(Math.random() * choices.length)];
+              makeChoice(randomChoice, true);
+            }
           }
         }
       }, 1000);
+    }
+
+    function previewChoice(choice) {
+      if (myChoice) return; // Already confirmed
+
+      previewedChoice = choice;
+
+      // Update button states
+      document.querySelectorAll('.choice-btn').forEach(btn => {
+        btn.classList.remove('preview');
+      });
+
+      const buttons = document.querySelectorAll('.choice-btn');
+      const choiceMap = { rock: 0, paper: 1, scissors: 2 };
+      buttons[choiceMap[choice]].classList.add('preview');
+
+      // Show confirm button
+      document.getElementById('confirmBtn').style.display = 'inline-block';
+      document.getElementById('gameStatus').textContent = 'click confirm or change choice';
+    }
+
+    function confirmChoice() {
+      if (!previewedChoice || myChoice) return;
+
+      makeChoice(previewedChoice, false);
     }
 
     function makeChoice(choice, auto = false) {
       if (myChoice) return;
 
       myChoice = choice;
+      previewedChoice = null;
       socket.emit('make_choice', { roomId: currentRoom, choice });
 
       if (timerInterval) clearInterval(timerInterval);
 
+      // Hide confirm button
+      document.getElementById('confirmBtn').style.display = 'none';
+
       document.querySelectorAll('.choice-btn').forEach(btn => {
         btn.classList.remove('selected');
+        btn.classList.remove('preview');
         btn.disabled = true;
       });
 
@@ -444,6 +527,18 @@
       document.getElementById('score').textContent = `you: ${myScore} | them: ${theirScore}`;
     }
 
+    function updateStreak() {
+      const streakDiv = document.getElementById('winStreak');
+      if (winStreak >= 2) {
+        streakDiv.textContent = `🔥 ${winStreak} win streak! 🔥`;
+        streakDiv.style.display = 'block';
+        streakDiv.classList.add('active');
+      } else {
+        streakDiv.style.display = 'none';
+        streakDiv.classList.remove('active');
+      }
+    }
+
     function startPingMeasurement() {
       if (pingInterval) clearInterval(pingInterval);
 
@@ -505,7 +600,9 @@
 
     socket.on('start_round', () => {
       myChoice = null;
+      previewedChoice = null;
       document.getElementById('result').style.display = 'none';
+      document.getElementById('confirmBtn').style.display = 'none';
       const btn = document.getElementById('playAgainBtn');
       btn.style.display = 'none';
       btn.classList.remove('waiting-opponent');
@@ -515,6 +612,7 @@
 
       document.querySelectorAll('.choice-btn').forEach(btn => {
         btn.classList.remove('selected');
+        btn.classList.remove('preview');
         btn.disabled = false;
       });
 
@@ -550,6 +648,7 @@
       let outcomeText = '';
 
       if (result === 'tie') {
+        winStreak = 0; // Reset streak on tie
         outcomeText = 'tie! :O';
         resultText = `
           <div class="battle-emoji">${theirChoice}</div>
@@ -557,13 +656,15 @@
           <div style="margin: 20px 0;"></div>
           <div class="battle-emoji">${myChoiceEmoji}</div>
           <div class="battle-label">you</div>
-          <div style="margin-top: 20px;">${outcomeText}</div>
+          <div class="battle-outcome" style="margin-top: 20px;">${outcomeText}</div>
+          <div class="battle-score">you: ${myScore} | them: ${theirScore}</div>
         `;
       } else {
         const winner = result === 'player1' ? player1 : player2;
 
         if (myChoice === winner) {
           myScore++;
+          winStreak++; // Increment streak
           outcomeText = 'you win!!';
           resultText = `
             <div class="battle-emoji">${theirChoice}</div>
@@ -571,10 +672,12 @@
             <div style="margin: 20px 0;"></div>
             <div class="battle-emoji winner">${myChoiceEmoji}</div>
             <div class="battle-label">you</div>
-            <div style="margin-top: 20px;">${outcomeText}</div>
+            <div class="battle-outcome" style="margin-top: 20px;">${outcomeText}</div>
+            <div class="battle-score">you: ${myScore} | them: ${theirScore}</div>
           `;
         } else {
           theirScore++;
+          winStreak = 0; // Reset streak on loss
           outcomeText = "you lose :'(";
           resultText = `
             <div class="battle-emoji winner">${theirChoice}</div>
@@ -582,12 +685,14 @@
             <div style="margin: 20px 0;"></div>
             <div class="battle-emoji">${myChoiceEmoji}</div>
             <div class="battle-label">you</div>
-            <div style="margin-top: 20px;">${outcomeText}</div>
+            <div class="battle-outcome" style="margin-top: 20px;">${outcomeText}</div>
+            <div class="battle-score">you: ${myScore} | them: ${theirScore}</div>
           `;
         }
       }
 
       updateScore();
+      updateStreak();
       resultDiv.innerHTML = resultText;
       resultDiv.style.display = 'block';
       document.getElementById('playAgainBtn').style.display = 'inline-block';
