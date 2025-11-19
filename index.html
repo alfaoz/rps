@@ -361,6 +361,8 @@
     let myPing = 0;
     let theirPing = 0;
     let pingInterval = null;
+    let roundStartTime = null;
+    let timerDuration = 3;
 
     const screens = {
       menu: document.getElementById('menu'),
@@ -402,17 +404,18 @@
       socket.emit('join_room', roomId.toUpperCase());
     }
 
-    function startTimer(duration = 3) {
-      timeLeft = duration.toFixed(1);
-      timeLeft = parseFloat(timeLeft);
-      updateTimerDisplay();
+    function startTimer(duration = 3, serverTime = null) {
+      timerDuration = duration;
+      roundStartTime = serverTime || Date.now();
 
       if (timerInterval) clearInterval(timerInterval);
 
-      timerInterval = setInterval(() => {
-        timeLeft -= 0.1;
-        if (timeLeft < 0) timeLeft = 0;
+      // Update immediately
+      calculateTimeLeft();
+      updateTimerDisplay();
 
+      timerInterval = setInterval(() => {
+        calculateTimeLeft();
         updateTimerDisplay();
 
         if (timeLeft <= 0) {
@@ -425,6 +428,11 @@
           }
         }
       }, 100);
+    }
+
+    function calculateTimeLeft() {
+      const elapsed = (Date.now() - roundStartTime) / 1000;
+      timeLeft = Math.max(0, timerDuration - elapsed);
     }
 
     function updateTimerDisplay() {
@@ -660,11 +668,10 @@
     socket.on('player_joined', ({ playerCount }) => {
       if (playerCount === 2) {
         showScreen('game');
-        setTimeout(startTimer, 1000);
       }
     });
 
-    socket.on('start_round', ({ duration }) => {
+    socket.on('start_round', ({ duration, serverTime }) => {
       myChoice = null;
       document.getElementById('result').style.display = 'none';
       document.getElementById('gameStatus').textContent = 'pick one!';
@@ -674,7 +681,7 @@
         btn.disabled = false;
       });
 
-      startTimer(duration);
+      startTimer(duration, serverTime);
     });
 
     socket.on('player_ready', ({ player }) => {

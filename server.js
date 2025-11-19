@@ -170,10 +170,13 @@ io.on('connection', (socket) => {
 function startRound(roomId) {
   const room = rooms[roomId];
   if (!room) return;
-  
+
   room.status = 'playing';
   room.roundStartTime = Date.now();
-  io.to(roomId).emit('start_round', { duration: room.timerDuration });
+  io.to(roomId).emit('start_round', {
+    duration: room.timerDuration,
+    serverTime: room.roundStartTime
+  });
 }
 
 function resolveGame(roomId) {
