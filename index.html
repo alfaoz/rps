@@ -225,9 +225,6 @@
 
     .reaction-display {
       position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
       font-size: 4em;
       z-index: 2000;
       animation: reactionPop 1.5s ease-out forwards;
@@ -237,15 +234,15 @@
     @keyframes reactionPop {
       0% {
         opacity: 0;
-        transform: translate(-50%, -50%) scale(0.5);
+        transform: scale(0.5) translateY(0);
       }
       20% {
         opacity: 1;
-        transform: translate(-50%, -50%) scale(1.2);
+        transform: scale(1.2) translateY(-20px);
       }
       100% {
         opacity: 0;
-        transform: translate(-50%, -150%) scale(1);
+        transform: scale(1) translateY(-120px);
       }
     }
 
@@ -551,11 +548,21 @@
       const reactionDiv = document.createElement('div');
       reactionDiv.className = 'reaction-display';
       reactionDiv.textContent = emoji;
+
+      // Random position near center (40-60% of viewport width/height)
+      const randomX = 30 + Math.random() * 40; // 30-70%
+      const randomY = 35 + Math.random() * 30; // 35-65%
+
+      reactionDiv.style.left = randomX + '%';
+      reactionDiv.style.top = randomY + '%';
+
       document.body.appendChild(reactionDiv);
 
       // Remove after animation completes
       setTimeout(() => {
-        document.body.removeChild(reactionDiv);
+        if (reactionDiv.parentNode) {
+          document.body.removeChild(reactionDiv);
+        }
       }, 1500);
     }
 
