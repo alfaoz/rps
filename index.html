@@ -357,7 +357,6 @@
     const socket = io();
     let currentRoom = null;
     let myChoice = null;
-    let selectedChoice = null;
     let timerInterval = null;
     let timeLeft = 3;
     let myScore = 0;
@@ -422,14 +421,10 @@
         if (timeLeft <= 0) {
           clearInterval(timerInterval);
           if (!myChoice) {
-            // Auto-submit selected choice or pick random
-            if (selectedChoice) {
-              makeChoice(selectedChoice, true);
-            } else {
-              const choices = ['rock', 'paper', 'scissors'];
-              const randomChoice = choices[Math.floor(Math.random() * choices.length)];
-              makeChoice(randomChoice, true);
-            }
+            // Auto-pick random choice
+            const choices = ['rock', 'paper', 'scissors'];
+            const randomChoice = choices[Math.floor(Math.random() * choices.length)];
+            makeChoice(randomChoice, true);
           }
         }
       }, 1000);
@@ -438,25 +433,14 @@
     function selectChoice(choice) {
       if (myChoice) return; // Already submitted
 
-      selectedChoice = choice;
-
-      // Update button states
-      document.querySelectorAll('.choice-btn').forEach(btn => {
-        btn.classList.remove('selected');
-      });
-
-      const buttons = document.querySelectorAll('.choice-btn');
-      const choiceMap = { rock: 0, paper: 1, scissors: 2 };
-      buttons[choiceMap[choice]].classList.add('selected');
-
-      document.getElementById('gameStatus').textContent = 'selected! (can change)';
+      // Immediately submit the choice
+      makeChoice(choice, false);
     }
 
     function makeChoice(choice, auto = false) {
       if (myChoice) return;
 
       myChoice = choice;
-      selectedChoice = null;
       socket.emit('make_choice', { roomId: currentRoom, choice });
 
       if (timerInterval) clearInterval(timerInterval);
@@ -663,7 +647,6 @@
 
     socket.on('start_round', () => {
       myChoice = null;
-      selectedChoice = null;
       document.getElementById('result').style.display = 'none';
       document.getElementById('reactions').classList.remove('active');
       const btn = document.getElementById('playAgainBtn');
