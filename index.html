@@ -283,6 +283,10 @@
       animation: shake 0.8s ease-in-out infinite;
     }
 
+    .timer.selected {
+      opacity: 0.3;
+    }
+
     @keyframes shake {
       0%, 100% { transform: translateX(0); }
       25% { transform: translateX(-2px); }
@@ -464,6 +468,14 @@
       } else {
         timerElement.classList.remove('shake');
       }
+
+      // Show close call message when opponent picks at 0.1 or below
+      if (myChoice && timeLeft <= 0.1 && timeLeft > 0) {
+        const statusElement = document.getElementById('gameStatus');
+        if (statusElement.textContent === 'waiting for friend...') {
+          statusElement.textContent = 'they almost ran out of time! :O';
+        }
+      }
     }
 
     function selectChoice(choice) {
@@ -479,7 +491,8 @@
       myChoice = choice;
       socket.emit('make_choice', { roomId: currentRoom, choice });
 
-      if (timerInterval) clearInterval(timerInterval);
+      // Gray out the timer but keep it running
+      document.getElementById('timer').classList.add('selected');
 
       document.querySelectorAll('.choice-btn').forEach(btn => {
         btn.classList.remove('selected');
@@ -495,7 +508,6 @@
       } else {
         document.getElementById('gameStatus').textContent = 'waiting for friend...';
       }
-      // keep showing time left instead of '-'
     }
 
     function playAgain() {
@@ -701,6 +713,9 @@
       myChoice = null;
       document.getElementById('result').style.display = 'none';
       document.getElementById('gameStatus').textContent = 'pick one!';
+
+      // Remove grayed out state from timer
+      document.getElementById('timer').classList.remove('selected');
 
       document.querySelectorAll('.choice-btn').forEach(btn => {
         btn.classList.remove('selected');
