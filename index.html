@@ -260,6 +260,16 @@
       font-weight: bold;
     }
 
+    .timer.shake {
+      animation: shake 0.5s ease-in-out infinite;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+      20%, 40%, 60%, 80% { transform: translateX(5px); }
+    }
+
     small {
       font-size: 0.8em;
       opacity: 0.7;
@@ -392,15 +402,17 @@
       socket.emit('join_room', roomId.toUpperCase());
     }
 
-    function startTimer() {
-      timeLeft = 3;
-      document.getElementById('timer').textContent = timeLeft;
+    function startTimer(duration = 3) {
+      timeLeft = duration;
+      updateTimerDisplay();
 
       if (timerInterval) clearInterval(timerInterval);
 
       timerInterval = setInterval(() => {
-        timeLeft--;
-        document.getElementById('timer').textContent = timeLeft;
+        timeLeft -= 0.1;
+        if (timeLeft < 0) timeLeft = 0;
+
+        updateTimerDisplay();
 
         if (timeLeft <= 0) {
           clearInterval(timerInterval);
@@ -411,7 +423,19 @@
             makeChoice(randomChoice, true);
           }
         }
-      }, 1000);
+      }, 100);
+    }
+
+    function updateTimerDisplay() {
+      const timerElement = document.getElementById('timer');
+      timerElement.textContent = timeLeft.toFixed(1);
+
+      // Add shake animation when timer hits 1.5 or below
+      if (timeLeft <= 1.5 && timeLeft > 0) {
+        timerElement.classList.add('shake');
+      } else {
+        timerElement.classList.remove('shake');
+      }
     }
 
     function selectChoice(choice) {
@@ -639,7 +663,7 @@
       }
     });
 
-    socket.on('start_round', () => {
+    socket.on('start_round', ({ duration }) => {
       myChoice = null;
       document.getElementById('result').style.display = 'none';
       document.getElementById('gameStatus').textContent = 'pick one!';
@@ -649,7 +673,7 @@
         btn.disabled = false;
       });
 
-      startTimer();
+      startTimer(duration);
     });
 
     socket.on('player_ready', ({ player }) => {
@@ -658,7 +682,7 @@
 
     socket.on('opponent_ready', () => {
       const btn = document.getElementById('playAgainBtn');
-      btn.textContent = 'friend is ready :O';
+      if (btn) btn.textContent = 'friend is ready :O';
     });
 
     socket.on('game_result', ({ player1, player2, result, timedOut }) => {
@@ -778,16 +802,6 @@
       scoreDiv.classList.remove('pending-reset');
       scoreDiv.classList.remove('reset-incoming');
       updateScore();
-    });
-
-    socket.on('server_ping', ({ timestamp }) => {
-      // Respond to server ping immediately
-      socket.emit('server_pong', { timestamp });
-
-      // Calculate own ping for debug mode
-      const latency = Date.now() - timestamp;
-      myPing = latency;
-      updatePingDisplay();
     });
 
     socket.on('ping_response', ({ timestamp }) => {
