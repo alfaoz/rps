@@ -200,10 +200,9 @@
     }
 
     #playAgainBtn {
-      position: fixed;
-      bottom: 150px;
-      left: 50%;
-      transform: translateX(-50%);
+      position: relative;
+      margin: 30px auto 20px auto;
+      display: block;
       z-index: 1001;
     }
 
@@ -334,7 +333,6 @@
         <button class="choice-btn" onclick="selectChoice('scissors')">✌️</button>
       </div>
       <div id="result" class="result" style="display: none;"></div>
-      <button onclick="playAgain()" style="display: none;" id="playAgainBtn">play again? :p</button>
     </div>
   </div>
 
@@ -644,11 +642,6 @@
     socket.on('start_round', () => {
       myChoice = null;
       document.getElementById('result').style.display = 'none';
-      const btn = document.getElementById('playAgainBtn');
-      btn.style.display = 'none';
-      btn.classList.remove('waiting-opponent');
-      btn.textContent = 'play again? :p';
-      btn.disabled = false;
       document.getElementById('gameStatus').textContent = 'pick one!';
 
       document.querySelectorAll('.choice-btn').forEach(btn => {
@@ -688,7 +681,8 @@
       let outcomeText = '';
 
       const reactionsHTML = `
-        <div style="margin-top: 70px; opacity: 0.4;">
+        <button onclick="playAgain()" id="playAgainBtn">play again? :p</button>
+        <div style="margin-top: 20px; opacity: 0.4;">
           <button class="reaction-btn" onclick="sendReaction('❤️')">❤️</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('🔥')">🔥</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😭')">😭</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😔')">😔</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😵‍💫')">😵‍💫</button>
         </div>
       `;
@@ -744,7 +738,6 @@
       updateStreak();
       resultDiv.innerHTML = resultText;
       resultDiv.style.display = 'block';
-      document.getElementById('playAgainBtn').style.display = 'inline-block';
       document.getElementById('gameStatus').textContent = '';
     });
 
