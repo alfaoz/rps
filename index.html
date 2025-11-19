@@ -633,11 +633,24 @@
     socket.on('room_created', (roomId) => {
       currentRoom = roomId;
       document.getElementById('roomCode').textContent = roomId;
+
+      // Update URL with room code
+      const newUrl = window.location.pathname + '?room=' + roomId;
+      window.history.pushState({}, '', newUrl);
+
       showScreen('waiting');
     });
 
     socket.on('room_joined', (roomId) => {
       currentRoom = roomId;
+
+      // Update URL with room code if not already there
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('room') !== roomId) {
+        const newUrl = window.location.pathname + '?room=' + roomId;
+        window.history.pushState({}, '', newUrl);
+      }
+
       showScreen('game');
     });
 
@@ -756,6 +769,9 @@
         showScreen('menu');
         currentRoom = null;
         myChoice = null;
+
+        // Clear URL room parameter
+        window.history.pushState({}, '', window.location.pathname);
       }, 2000);
     });
 
