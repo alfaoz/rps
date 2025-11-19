@@ -194,6 +194,25 @@
       50% { opacity: 0.8; transform: scale(1.05); }
     }
 
+    .battle-combo {
+      font-size: 1.5em;
+      margin: 10px 0 5px 0;
+      color: white;
+      font-weight: bold;
+      animation: comboAppear 0.3s ease-out;
+    }
+
+    @keyframes comboAppear {
+      0% {
+        opacity: 0;
+        transform: scale(0.8);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
     .choice-btn.selected {
       background: white;
       color: black;
@@ -560,13 +579,20 @@
     function updateStreak() {
       const streakDiv = document.getElementById('winStreak');
       if (winStreak >= 2) {
-        streakDiv.textContent = `🔥 ${winStreak} win streak! 🔥`;
+        streakDiv.textContent = `combo x${winStreak}`;
         streakDiv.style.display = 'block';
         streakDiv.classList.add('active');
       } else {
         streakDiv.style.display = 'none';
         streakDiv.classList.remove('active');
       }
+    }
+
+    function getComboHTML(combo) {
+      if (combo >= 2) {
+        return `<div class="battle-combo">combo x${combo}</div>`;
+      }
+      return '';
     }
 
     function sendReaction(emoji) {
@@ -746,6 +772,7 @@
             <div class="battle-emoji winner">${myChoiceEmoji}</div>
             <div class="battle-label">you</div>
             <div class="battle-outcome" style="margin-top: 20px;">${outcomeText}</div>
+            ${getComboHTML(winStreak)}
             <div class="battle-score">you: ${myScore} | them: ${theirScore}</div>
             ${reactionsHTML}
           `;
