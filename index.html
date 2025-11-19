@@ -338,14 +338,45 @@
 
     function copyLink() {
       const url = window.location.href.split('?')[0] + '?room=' + currentRoom;
-      navigator.clipboard.writeText(url).then(() => {
-        const linkDiv = document.getElementById('shareLink');
-        const code = currentRoom;
-        linkDiv.innerHTML = '<div>copied! :3</div>';
-        setTimeout(() => {
-          linkDiv.innerHTML = `<div id="roomCode">${code}</div><small>click to copy link :3</small>`;
-        }, 1500);
-      });
+
+      // Try modern clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+          showCopiedMessage();
+        }).catch(() => {
+          fallbackCopy(url);
+        });
+      } else {
+        // Fallback for HTTP sites
+        fallbackCopy(url);
+      }
+    }
+
+    function fallbackCopy(text) {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+
+      try {
+        document.execCommand('copy');
+        showCopiedMessage();
+      } catch (err) {
+        showCopiedMessage('room code: ' + currentRoom);
+      }
+
+      document.body.removeChild(textArea);
+    }
+
+    function showCopiedMessage(message = 'copied! :3') {
+      const linkDiv = document.getElementById('shareLink');
+      const code = currentRoom;
+      linkDiv.innerHTML = `<div>${message}</div>`;
+      setTimeout(() => {
+        linkDiv.innerHTML = `<div id="roomCode">${code}</div><small>click to copy link :3</small>`;
+      }, 1500);
     }
 
     function showError(message) {
