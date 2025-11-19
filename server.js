@@ -170,6 +170,11 @@ io.on('connection', (socket) => {
     socket.emit('ping_response', { timestamp });
   });
 
+  socket.on('send_reaction', ({ roomId, emoji }) => {
+    // Broadcast the reaction to the other player in the room
+    socket.to(roomId).emit('receive_reaction', { emoji });
+  });
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
     clearInterval(pingTracker);

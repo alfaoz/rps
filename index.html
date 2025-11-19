@@ -220,6 +220,58 @@
       z-index: 1001;
     }
 
+    .reactions {
+      display: none;
+      margin: 10px 0;
+    }
+
+    .reactions.active {
+      display: block;
+    }
+
+    .reaction-btn {
+      font-size: 1.5em;
+      width: 45px;
+      height: 45px;
+      padding: 0;
+      margin: 3px;
+      background: black;
+      color: white;
+      border: 2px solid white;
+      cursor: pointer;
+    }
+
+    .reaction-btn:hover {
+      background: white;
+      transform: scale(1.1);
+    }
+
+    .reaction-display {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 4em;
+      z-index: 2000;
+      animation: reactionPop 1.5s ease-out forwards;
+      pointer-events: none;
+    }
+
+    @keyframes reactionPop {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.5);
+      }
+      20% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1.2);
+      }
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -150%) scale(1);
+      }
+    }
+
     .error {
       margin: 20px 0;
       padding: 15px;
@@ -305,6 +357,13 @@
         <button class="choice-btn" onclick="previewChoice('scissors')">✌️</button>
       </div>
       <button id="confirmBtn" onclick="confirmChoice()">confirm!</button>
+      <div class="reactions" id="reactions">
+        <button class="reaction-btn" onclick="sendReaction('❤️')">❤️</button>
+        <button class="reaction-btn" onclick="sendReaction('🔥')">🔥</button>
+        <button class="reaction-btn" onclick="sendReaction('😭')">😭</button>
+        <button class="reaction-btn" onclick="sendReaction('😔')">😔</button>
+        <button class="reaction-btn" onclick="sendReaction('😵‍💫')">😵‍💫</button>
+      </div>
       <div id="result" class="result" style="display: none;"></div>
       <button onclick="playAgain()" style="display: none;" id="playAgainBtn">play again? :p</button>
     </div>
@@ -539,6 +598,27 @@
       }
     }
 
+    function sendReaction(emoji) {
+      if (!currentRoom) return;
+
+      socket.emit('send_reaction', { roomId: currentRoom, emoji });
+
+      // Show your own reaction locally
+      displayReaction(emoji);
+    }
+
+    function displayReaction(emoji) {
+      const reactionDiv = document.createElement('div');
+      reactionDiv.className = 'reaction-display';
+      reactionDiv.textContent = emoji;
+      document.body.appendChild(reactionDiv);
+
+      // Remove after animation completes
+      setTimeout(() => {
+        document.body.removeChild(reactionDiv);
+      }, 1500);
+    }
+
     function startPingMeasurement() {
       if (pingInterval) clearInterval(pingInterval);
 
@@ -603,6 +683,7 @@
       previewedChoice = null;
       document.getElementById('result').style.display = 'none';
       document.getElementById('confirmBtn').style.display = 'none';
+      document.getElementById('reactions').classList.remove('active');
       const btn = document.getElementById('playAgainBtn');
       btn.style.display = 'none';
       btn.classList.remove('waiting-opponent');
@@ -696,6 +777,7 @@
       resultDiv.innerHTML = resultText;
       resultDiv.style.display = 'block';
       document.getElementById('playAgainBtn').style.display = 'inline-block';
+      document.getElementById('reactions').classList.add('active');
       document.getElementById('gameStatus').textContent = '';
     });
 
@@ -754,6 +836,10 @@
     socket.on('opponent_ping', ({ ping }) => {
       theirPing = ping;
       updatePingDisplay();
+    });
+
+    socket.on('receive_reaction', ({ emoji }) => {
+      displayReaction(emoji);
     });
 
     // Check for room code in URL
