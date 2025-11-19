@@ -469,11 +469,6 @@
       } else {
         timerElement.classList.remove('shake');
       }
-
-      // Track if opponent made it with 0.1 or less seconds
-      if (myChoice && timeLeft <= 0.1 && timeLeft > 0 && !opponentCloseCall) {
-        opponentCloseCall = true;
-      }
     }
 
     function selectChoice(choice) {
@@ -487,6 +482,12 @@
       if (myChoice) return;
 
       myChoice = choice;
+
+      // Track if I made it with 0.1 or less seconds remaining
+      if (timeLeft <= 0.1 && timeLeft > 0) {
+        opponentCloseCall = true;
+      }
+
       socket.emit('make_choice', { roomId: currentRoom, choice });
 
       // Gray out the timer but keep it running
