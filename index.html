@@ -506,9 +506,62 @@
       screens[screenName].classList.add('active');
     }
 
+    // Detect duplicate tabs using BroadcastChannel
+    const tabChannel = new BroadcastChannel('rps_tab_sync');
+    const tabId = Math.random().toString(36).slice(2);
+    let isActiveTab = true;
+
+    // Announce this tab and listen for others
+    tabChannel.onmessage = (event) => {
+      if (event.data.type === 'tab_opened' && event.data.tabId !== tabId) {
+        // Another tab opened - warn them if we're in a game
+        if (currentRoom) {
+          tabChannel.postMessage({ type: 'game_active', tabId, roomId: currentRoom });
+        }
+      } else if (event.data.type === 'game_active' && event.data.tabId !== tabId) {
+        // Another tab has an active game
+        isActiveTab = false;
+        showError('game open in another tab!');
+        if (socket) {
+          socket.disconnect();
+        }
+      } else if (event.data.type === 'tab_closed' && event.data.tabId !== tabId) {
+        // Other tab closed, we can be active again
+        isActiveTab = true;
+      }
+    };
+
+    // Announce ourselves
+    tabChannel.postMessage({ type: 'tab_opened', tabId });
+
+    // Cleanup on close
+    window.addEventListener('beforeunload', () => {
+      tabChannel.postMessage({ type: 'tab_closed', tabId });
+    });
+
+    // Handle tab visibility - resync timer when becoming visible
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && currentRoom && isActiveTab) {
+        if (roundStartTime && timerInterval) {
+          calculateTimeLeft();
+          updateTimerDisplay();
+
+          if (timeLeft <= 0 && !myChoice) {
+            const choices = ['rock', 'paper', 'scissors'];
+            const randomChoice = choices[Math.floor(Math.random() * choices.length)];
+            makeChoice(randomChoice, true);
+          }
+        }
+      }
+    });
+
     function createRoom() {
       if (!socket) {
         showError('connecting... please wait');
+        return;
+      }
+      if (!isActiveTab) {
+        showError('game open in another tab!');
         return;
       }
       socket.emit('create_room');
@@ -517,6 +570,10 @@
     function joinRoom() {
       if (!socket) {
         showError('connecting... please wait');
+        return;
+      }
+      if (!isActiveTab) {
+        showError('game open in another tab!');
         return;
       }
 
@@ -870,8 +927,14 @@
     function resetGameUI() {
       myChoice = null;
       closeCall = false;
+      // Clear any existing timer
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
       document.getElementById('result').style.display = 'none';
       document.getElementById('timer').classList.remove('selected');
+      document.getElementById('timer').classList.remove('shake');
       document.querySelectorAll('.choice-btn').forEach(btn => {
         btn.classList.remove('selected');
         btn.disabled = false;

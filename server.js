@@ -408,6 +408,15 @@ function getGameStateForPlayer(roomId, slot) {
 }
 
 // ===================
+// HELPER: Update session activity
+// ===================
+function updateActivity(sessionId) {
+  if (sessionId && sessionData[sessionId]) {
+    sessionData[sessionId].lastActivity = Date.now();
+  }
+}
+
+// ===================
 // SOCKET HANDLING
 // ===================
 io.on('connection', (socket) => {
@@ -557,11 +566,19 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room || !sessionId) return;
 
+    updateActivity(sessionId);
+
     const validChoices = ['rock', 'paper', 'scissors'];
     if (!validChoices.includes(choice)) return;
 
     const slot = getPlayerSlot(roomId, sessionId);
     if (slot === -1) return;
+
+    // Prevent duplicate choices (idempotency)
+    if (room.choices[slot]) return;
+
+    // Validate game is in playing state
+    if (room.status !== 'playing') return;
 
     room.choices[slot] = choice;
     logToRoom(roomId, 'choice', { player: slot + 1, choice });
@@ -578,8 +595,13 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room || !sessionId) return;
 
+    updateActivity(sessionId);
+
     const slot = getPlayerSlot(roomId, sessionId);
     if (slot === -1) return;
+
+    // Prevent duplicate ready (idempotency)
+    if (room.ready[slot]) return;
 
     room.ready[slot] = true;
 
@@ -596,6 +618,8 @@ io.on('connection', (socket) => {
     const sessionId = socketToSession[socket.id];
     const room = rooms[roomId];
     if (!room || !sessionId) return;
+
+    updateActivity(sessionId);
 
     const slot = getPlayerSlot(roomId, sessionId);
     if (slot === -1) return;
@@ -655,11 +679,17 @@ io.on('connection', (socket) => {
     const sessionId = socketToSession[socket.id];
     if (!sessionId) return;
 
+    // Cancel any pending grace period
+    cancelDisconnectGracePeriod(sessionId);
+
     const roomId = sessionToRoom[sessionId];
     if (roomId && rooms[roomId]) {
       logToRoom(roomId, 'player_left_intentionally', { sessionId: sessionId.slice(0, 8) });
       removePlayerFromRoom(sessionId, roomId);
     }
+
+    // Clean up socket mapping
+    delete socketToSession[socket.id];
   });
 
   socket.on('disconnect', () => {
