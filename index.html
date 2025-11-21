@@ -327,6 +327,48 @@
         opacity: 1;
       }
     }
+
+    .leave-btn {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: none;
+      border: none;
+      color: #555;
+      font-size: 0.9em;
+      cursor: pointer;
+      padding: 5px 10px;
+      z-index: 1500;
+    }
+
+    .leave-btn:hover {
+      color: #888;
+      background: none;
+    }
+
+    .leave-confirm {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .leave-confirm-text {
+      font-size: 1.2em;
+    }
+
+    .leave-confirm-buttons {
+      display: flex;
+      gap: 15px;
+    }
   </style>
 </head>
 <body>
@@ -355,7 +397,8 @@
 
     <!-- Game Screen -->
     <div id="game" class="screen">
-      <div id="debugInfo" class="debug-info" style="display: none;">ping: you <span id="myPing">0</span>ms | them <span id="theirPing">0</span>ms</div>
+      <button class="leave-btn" onclick="showLeaveConfirm()">leave</button>
+      <div id="debugInfo" class="debug-info" style="display: none;">ping: <span id="myPing">0</span>ms</div>
       <div class="score" id="score" onclick="toggleResetScore()">you: 0 | them: 0</div>
       <div class="win-streak" id="winStreak" style="display: none;"></div>
       <div class="timer" id="timer">3</div>
@@ -367,11 +410,29 @@
       </div>
       <div id="result" class="result" style="display: none;"></div>
     </div>
+
+    <!-- Leave Confirmation Dialog -->
+    <div id="leaveConfirm" class="leave-confirm" style="display: none;">
+      <div class="leave-confirm-text">leave the game?</div>
+      <div class="leave-confirm-buttons">
+        <button onclick="confirmLeave()">yes</button>
+        <button onclick="hideLeaveConfirm()">no</button>
+      </div>
+    </div>
+
+    <!-- Player Left Dialog -->
+    <div id="playerLeftDialog" class="leave-confirm" style="display: none;">
+      <div class="leave-confirm-text">opponent left the game :(</div>
+      <div class="leave-confirm-buttons">
+        <button onclick="exitToMenu()">okay</button>
+      </div>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
+    let sessionId = null;
+    let socket = null;
     let currentRoom = null;
     let myChoice = null;
     let timerInterval = null;
@@ -382,11 +443,57 @@
     let myPlayerIndex = null;
     let debugMode = false;
     let myPing = 0;
-    let theirPing = 0;
     let pingInterval = null;
     let roundStartTime = null;
     let timerDuration = 3;
-    let opponentCloseCall = false;
+    let closeCall = false;
+
+    const choiceEmoji = { rock: '✊', paper: '✋', scissors: '✌️' };
+
+    // Initialize session and socket connection
+    async function initializeSession() {
+      try {
+        const response = await fetch('/api/session', { credentials: 'include' });
+        const data = await response.json();
+        sessionId = data.sessionId;
+        console.log('Session ID:', sessionId);
+
+        socket = io();
+
+        return new Promise((resolve) => {
+          socket.on('connect', () => {
+            console.log('Socket connected:', socket.id);
+            setupSocketListeners();
+            socket.emit('register_session', sessionId);
+            resolve();
+          });
+        });
+      } catch (error) {
+        console.error('Failed to initialize session:', error);
+      }
+    }
+
+    // Call initialization on page load
+    initializeSession().then(() => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomCode = urlParams.get('room');
+      if (roomCode) {
+        document.getElementById('roomInput').value = roomCode;
+        // Wait a bit for reconnection to potentially happen first
+        setTimeout(() => {
+          if (!currentRoom) {
+            console.log('[CLIENT] Auto-joining from URL:', roomCode);
+            if (roomCode.toLowerCase() === 'kiraz') {
+              setTimeout(() => joinRoom(), 100);
+            } else {
+              joinRoom();
+            }
+          } else {
+            console.log('[CLIENT] Already in room', currentRoom, '- skipping auto-join');
+          }
+        }, 300);
+      }
+    });
 
     const screens = {
       menu: document.getElementById('menu'),
@@ -400,10 +507,19 @@
     }
 
     function createRoom() {
+      if (!socket) {
+        showError('connecting... please wait');
+        return;
+      }
       socket.emit('create_room');
     }
 
     function joinRoom() {
+      if (!socket) {
+        showError('connecting... please wait');
+        return;
+      }
+
       const roomId = document.getElementById('roomInput').value.trim();
       if (!roomId) {
         showError('please enter a room code >:c');
@@ -412,7 +528,7 @@
 
       // easter eggs :3
       if (roomId.toLowerCase() === 'kiraz') {
-        showLoveMessage('i love you!!!! - alfa ♥');
+        showLoveMessage('i love you!!!! - alfa');
         return;
       }
 
@@ -434,7 +550,6 @@
 
       if (timerInterval) clearInterval(timerInterval);
 
-      // Update immediately
       calculateTimeLeft();
       updateTimerDisplay();
 
@@ -445,7 +560,6 @@
         if (timeLeft <= 0) {
           clearInterval(timerInterval);
           if (!myChoice) {
-            // Auto-pick random choice
             const choices = ['rock', 'paper', 'scissors'];
             const randomChoice = choices[Math.floor(Math.random() * choices.length)];
             makeChoice(randomChoice, true);
@@ -463,7 +577,6 @@
       const timerElement = document.getElementById('timer');
       timerElement.textContent = timeLeft.toFixed(1);
 
-      // Add shake animation when timer hits 1.5 or below
       if (timeLeft <= 1.5 && timeLeft > 0) {
         timerElement.classList.add('shake');
       } else {
@@ -472,25 +585,23 @@
     }
 
     function selectChoice(choice) {
-      if (myChoice) return; // Already submitted
-
-      // Immediately submit the choice
+      if (myChoice) return;
       makeChoice(choice, false);
     }
 
     function makeChoice(choice, auto = false) {
       if (myChoice) return;
+      if (!socket) return;
 
       myChoice = choice;
 
       // Track if I made it with 0.3 or less seconds remaining lmao
       if (timeLeft <= 0.3 && timeLeft > 0) {
-        opponentCloseCall = true;
+        closeCall = true;
       }
 
       socket.emit('make_choice', { roomId: currentRoom, choice });
 
-      // Gray out the timer but keep it running
       document.getElementById('timer').classList.add('selected');
 
       document.querySelectorAll('.choice-btn').forEach(btn => {
@@ -510,6 +621,8 @@
     }
 
     function playAgain() {
+      if (!socket) return;
+
       const btn = document.getElementById('playAgainBtn');
       btn.classList.add('waiting-opponent');
       btn.textContent = 'waiting for friend...';
@@ -521,7 +634,6 @@
     function copyLink() {
       const url = window.location.href.split('?')[0] + '?room=' + currentRoom;
 
-      // Try modern clipboard API first
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(() => {
           showCopiedMessage();
@@ -529,7 +641,6 @@
           fallbackCopy(url);
         });
       } else {
-        // Fallback for HTTP sites
         fallbackCopy(url);
       }
     }
@@ -599,26 +710,54 @@
       }
     }
 
-    function getComboHTML(combo) {
-      if (combo >= 2) {
-        return `<div class="battle-combo">combo x${combo}</div>`;
-      }
-      return '';
+    function getReactionsHTML() {
+      return `
+        <button onclick="playAgain()" id="playAgainBtn">play again? :p</button>
+        <div style="margin-top: 20px; opacity: 0.4;">
+          <button class="reaction-btn" onclick="sendReaction('❤️')">❤️</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('🔥')">🔥</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😭')">😭</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😔')">😔</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😵‍💫')">😵‍💫</button>
+        </div>
+      `;
     }
 
-    function getCloseCallHTML() {
-      if (opponentCloseCall) {
-        return `<div class="battle-combo">close call!</div>`;
+    function renderResult(myChoiceVal, theirChoiceVal, result, currentMyScore, currentTheirScore, currentWinStreak) {
+      const myEmoji = choiceEmoji[myChoiceVal];
+      const theirEmoji = choiceEmoji[theirChoiceVal];
+
+      let outcomeText = '';
+      let myWinner = false;
+      let theirWinner = false;
+
+      if (result === 'win') {
+        outcomeText = 'you win!!';
+        myWinner = true;
+      } else if (result === 'lose') {
+        outcomeText = "you lose :'(";
+        theirWinner = true;
+      } else {
+        outcomeText = 'tie! :O';
       }
-      return '';
+
+      const comboHTML = result === 'win' && currentWinStreak >= 2 ? `<div class="battle-combo">combo x${currentWinStreak}</div>` : '';
+      const closeCallHTML = closeCall ? `<div class="battle-combo">close call!</div>` : '';
+
+      return `
+        <div class="battle-emoji${theirWinner ? ' winner' : ''}">${theirEmoji}</div>
+        <div class="battle-label">them</div>
+        <div style="margin: 20px 0;"></div>
+        <div class="battle-emoji${myWinner ? ' winner' : ''}">${myEmoji}</div>
+        <div class="battle-label">you</div>
+        <div class="battle-outcome" style="margin-top: 20px;">${outcomeText}</div>
+        ${comboHTML}
+        ${closeCallHTML}
+        <div class="battle-score">you: ${currentMyScore} | them: ${currentTheirScore}</div>
+        ${getReactionsHTML()}
+      `;
     }
 
     function sendReaction(emoji) {
-      if (!currentRoom) return;
+      if (!currentRoom || !socket) return;
 
       socket.emit('send_reaction', { roomId: currentRoom, emoji });
-
-      // Show your own reaction locally
       displayReaction(emoji);
     }
 
@@ -627,16 +766,14 @@
       reactionDiv.className = 'reaction-display';
       reactionDiv.textContent = emoji;
 
-      // Random position near center (40-60% of viewport width/height)
-      const randomX = 30 + Math.random() * 40; // 30-70%
-      const randomY = 35 + Math.random() * 30; // 35-65%
+      const randomX = 30 + Math.random() * 40;
+      const randomY = 35 + Math.random() * 30;
 
       reactionDiv.style.left = randomX + '%';
       reactionDiv.style.top = randomY + '%';
 
       document.body.appendChild(reactionDiv);
 
-      // Remove after animation completes
       setTimeout(() => {
         if (reactionDiv.parentNode) {
           document.body.removeChild(reactionDiv);
@@ -646,256 +783,310 @@
 
     function startPingMeasurement() {
       if (pingInterval) clearInterval(pingInterval);
+      if (!socket) return;
 
       pingInterval = setInterval(() => {
+        if (!socket) return;
         const start = Date.now();
         socket.emit('ping_request', { timestamp: start });
       }, 1000);
     }
 
-    function updatePingDisplay() {
-      if (debugMode) {
-        document.getElementById('myPing').textContent = myPing;
-        document.getElementById('theirPing').textContent = theirPing;
-      }
-    }
-
     function toggleResetScore() {
+      if (!socket) return;
+
       const scoreDiv = document.getElementById('score');
       const hasPending = scoreDiv.classList.contains('pending-reset');
       const hasIncoming = scoreDiv.classList.contains('reset-incoming');
 
       if (hasIncoming) {
-        // Agree to incoming reset request
         scoreDiv.classList.remove('reset-incoming');
         scoreDiv.classList.add('pending-reset');
         scoreDiv.textContent = 'resetting...';
         socket.emit('request_reset', { roomId: currentRoom });
       } else if (hasPending) {
-        // Cancel reset
         scoreDiv.classList.remove('pending-reset');
         updateScore();
         socket.emit('cancel_reset', { roomId: currentRoom });
       } else {
-        // Request reset
         scoreDiv.classList.add('pending-reset');
         scoreDiv.textContent = 'waiting for friend...';
         socket.emit('request_reset', { roomId: currentRoom });
       }
     }
 
-    // Socket event listeners
-    socket.on('room_created', (roomId) => {
-      currentRoom = roomId;
-      document.getElementById('roomCode').textContent = roomId;
+    function showLeaveConfirm() {
+      document.getElementById('leaveConfirm').style.display = 'flex';
+    }
 
-      // Update URL with room code
-      const newUrl = window.location.pathname + '?room=' + roomId;
-      window.history.pushState({}, '', newUrl);
+    function hideLeaveConfirm() {
+      document.getElementById('leaveConfirm').style.display = 'none';
+    }
 
-      showScreen('waiting');
-    });
+    function confirmLeave() {
+      if (!socket || !currentRoom) return;
 
-    socket.on('room_joined', (roomId) => {
-      currentRoom = roomId;
+      socket.emit('leave_game');
+      exitToMenu();
+    }
 
-      // Update URL with room code if not already there
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('room') !== roomId) {
-        const newUrl = window.location.pathname + '?room=' + roomId;
-        window.history.pushState({}, '', newUrl);
-      }
-
-      showScreen('game');
-    });
-
-    socket.on('player_joined', ({ playerCount }) => {
-      if (playerCount === 2) {
-        showScreen('game');
-      }
-    });
-
-    socket.on('start_round', ({ duration, serverTime }) => {
+    function exitToMenu() {
+      // Clear room state
+      currentRoom = null;
+      myScore = 0;
+      theirScore = 0;
+      winStreak = 0;
       myChoice = null;
-      opponentCloseCall = false; // Reset close call tracker
+      if (timerInterval) clearInterval(timerInterval);
+
+      // Hide dialogs
+      document.getElementById('leaveConfirm').style.display = 'none';
+      document.getElementById('playerLeftDialog').style.display = 'none';
       document.getElementById('result').style.display = 'none';
-      document.getElementById('gameStatus').textContent = 'pick one!';
 
-      // Remove grayed out state from timer
+      // Clean URL
+      window.history.pushState({}, '', window.location.pathname);
+
+      // Reset UI and show menu
+      updateScore();
+      showScreen('menu');
+    }
+
+    function showPlayerLeftDialog() {
+      document.getElementById('playerLeftDialog').style.display = 'flex';
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && currentRoom) {
+        const leaveConfirm = document.getElementById('leaveConfirm');
+        if (leaveConfirm.style.display === 'flex') {
+          hideLeaveConfirm();
+        } else {
+          showLeaveConfirm();
+        }
+      }
+    });
+
+    function resetGameUI() {
+      myChoice = null;
+      closeCall = false;
+      document.getElementById('result').style.display = 'none';
       document.getElementById('timer').classList.remove('selected');
-
       document.querySelectorAll('.choice-btn').forEach(btn => {
         btn.classList.remove('selected');
         btn.disabled = false;
       });
+    }
 
-      startTimer(duration, serverTime);
-    });
+    // Setup all socket event listeners
+    function setupSocketListeners() {
+      socket.on('session_registered', () => {
+        console.log('[CLIENT] Session registered');
+      });
 
-    socket.on('player_ready', ({ player }) => {
-      console.log(`player ${player} ready`);
-    });
+      socket.on('room_created', (roomId) => {
+        currentRoom = roomId;
+        myPlayerIndex = 1;
+        document.getElementById('roomCode').textContent = roomId;
+        const newUrl = window.location.pathname + '?room=' + roomId;
+        window.history.pushState({}, '', newUrl);
+        showScreen('waiting');
+      });
 
-    socket.on('opponent_ready', () => {
-      const btn = document.getElementById('playAgainBtn');
-      if (btn) btn.textContent = 'friend is ready :O';
-    });
+      socket.on('room_joined', ({ roomId, playerIndex }) => {
+        console.log('[CLIENT] Joined room:', roomId, 'as player', playerIndex);
+        currentRoom = roomId;
+        myPlayerIndex = playerIndex;
 
-    socket.on('game_result', ({ player1, player2, result, timedOut }) => {
-      if (timerInterval) clearInterval(timerInterval);
-
-      const choices = { rock: '✊', paper: '✋', scissors: '✌️' };
-      const resultDiv = document.getElementById('result');
-
-      // Determine choices for display
-      let theirChoice, myChoiceEmoji;
-      if (myChoice === player1) {
-        myChoiceEmoji = choices[player1];
-        theirChoice = choices[player2];
-      } else {
-        myChoiceEmoji = choices[player2];
-        theirChoice = choices[player1];
-      }
-
-      let resultText = '';
-      let outcomeText = '';
-
-      const reactionsHTML = `
-        <button onclick="playAgain()" id="playAgainBtn">play again? :p</button>
-        <div style="margin-top: 20px; opacity: 0.4;">
-          <button class="reaction-btn" onclick="sendReaction('❤️')">❤️</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('🔥')">🔥</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😭')">😭</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😔')">😔</button><span class="reaction-separator">|</span><button class="reaction-btn" onclick="sendReaction('😵‍💫')">😵‍💫</button>
-        </div>
-      `;
-
-      if (result === 'tie') {
-        winStreak = 0; // Reset streak on tie
-        outcomeText = 'tie! :O';
-        resultText = `
-          <div class="battle-emoji">${theirChoice}</div>
-          <div class="battle-label">them</div>
-          <div style="margin: 20px 0;"></div>
-          <div class="battle-emoji">${myChoiceEmoji}</div>
-          <div class="battle-label">you</div>
-          <div class="battle-outcome" style="margin-top: 20px;">${outcomeText}</div>
-          ${getCloseCallHTML()}
-          <div class="battle-score">you: ${myScore} | them: ${theirScore}</div>
-          ${reactionsHTML}
-        `;
-      } else {
-        const winner = result === 'player1' ? player1 : player2;
-
-        if (myChoice === winner) {
-          myScore++;
-          winStreak++; // Increment streak
-          outcomeText = 'you win!!';
-          resultText = `
-            <div class="battle-emoji">${theirChoice}</div>
-            <div class="battle-label">them</div>
-            <div style="margin: 20px 0;"></div>
-            <div class="battle-emoji winner">${myChoiceEmoji}</div>
-            <div class="battle-label">you</div>
-            <div class="battle-outcome" style="margin-top: 20px;">${outcomeText}</div>
-            ${getComboHTML(winStreak)}
-            ${getCloseCallHTML()}
-            <div class="battle-score">you: ${myScore} | them: ${theirScore}</div>
-            ${reactionsHTML}
-          `;
-        } else {
-          theirScore++;
-          winStreak = 0; // Reset streak on loss
-          outcomeText = "you lose :'(";
-          resultText = `
-            <div class="battle-emoji winner">${theirChoice}</div>
-            <div class="battle-label">them</div>
-            <div style="margin: 20px 0;"></div>
-            <div class="battle-emoji">${myChoiceEmoji}</div>
-            <div class="battle-label">you</div>
-            <div class="battle-outcome" style="margin-top: 20px;">${outcomeText}</div>
-            ${getCloseCallHTML()}
-            <div class="battle-score">you: ${myScore} | them: ${theirScore}</div>
-            ${reactionsHTML}
-          `;
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('room') !== roomId) {
+          const newUrl = window.location.pathname + '?room=' + roomId;
+          window.history.pushState({}, '', newUrl);
         }
-      }
 
-      updateScore();
-      updateStreak();
-      resultDiv.innerHTML = resultText;
-      resultDiv.style.display = 'block';
-      document.getElementById('gameStatus').textContent = '';
-    });
+        showScreen('game');
+        document.getElementById('gameStatus').textContent = 'waiting for game to start...';
+      });
 
-    socket.on('player_left', () => {
-      if (timerInterval) clearInterval(timerInterval);
-      showError("friend left the game :'(");
-      setTimeout(() => {
-        showScreen('menu');
-        currentRoom = null;
-        myChoice = null;
+      socket.on('player_joined', () => {
+        console.log('[CLIENT] Other player joined');
+        showScreen('game');
+        document.getElementById('gameStatus').textContent = 'opponent joined! starting soon...';
+      });
 
-        // Clear URL room parameter
-        window.history.pushState({}, '', window.location.pathname);
-      }, 2000);
-    });
+      socket.on('start_round', ({ duration, serverTime }) => {
+        console.log('[CLIENT] Round starting');
+        resetGameUI();
+        showScreen('game');
+        document.getElementById('gameStatus').textContent = 'pick one!';
+        startTimer(duration, serverTime);
+      });
 
-    socket.on('error', (message) => {
-      showError(message);
-    });
+      socket.on('player_ready', ({ player }) => {
+        console.log('[CLIENT] Player', player, 'ready');
+      });
 
-    socket.on('reset_requested', () => {
-      const scoreDiv = document.getElementById('score');
-      scoreDiv.textContent = 'friend wants to reset! (click to agree)';
-      scoreDiv.classList.add('reset-incoming');
-    });
+      socket.on('opponent_ready', () => {
+        const btn = document.getElementById('playAgainBtn');
+        if (btn) btn.textContent = 'friend is ready :O';
+      });
 
-    socket.on('reset_cancelled', () => {
-      const scoreDiv = document.getElementById('score');
-      scoreDiv.classList.remove('pending-reset');
-      scoreDiv.classList.remove('reset-incoming');
-      updateScore();
-    });
+      // NEW: Simplified game_result handler - server sends from our perspective
+      socket.on('game_result', ({ myChoice: serverMyChoice, theirChoice, result, myScore: serverMyScore, theirScore: serverTheirScore }) => {
+        console.log('[CLIENT] Game result:', result, 'My choice:', serverMyChoice, 'Their choice:', theirChoice);
+        if (timerInterval) clearInterval(timerInterval);
 
-    socket.on('score_reset', () => {
-      myScore = 0;
-      theirScore = 0;
-      const scoreDiv = document.getElementById('score');
-      scoreDiv.classList.remove('pending-reset');
-      scoreDiv.classList.remove('reset-incoming');
-      updateScore();
-    });
+        // Update scores from server (authoritative)
+        myScore = serverMyScore;
+        theirScore = serverTheirScore;
 
-    socket.on('ping_response', ({ timestamp }) => {
-      const latency = Date.now() - timestamp;
-      myPing = latency;
-      updatePingDisplay();
-    });
-
-    socket.on('opponent_ping', ({ ping }) => {
-      theirPing = ping;
-      updatePingDisplay();
-    });
-
-    socket.on('receive_reaction', ({ emoji }) => {
-      displayReaction(emoji);
-    });
-
-    // Check for room code in URL
-    window.addEventListener('load', () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const roomCode = urlParams.get('room');
-      if (roomCode) {
-        document.getElementById('roomInput').value = roomCode;
-
-        // easter egg check for url aswell
-        if (roomCode.toLowerCase() === 'kiraz') {
-          setTimeout(() => {
-            joinRoom();
-          }, 100);
+        // Update win streak
+        if (result === 'win') {
+          winStreak++;
         } else {
-          joinRoom();
+          winStreak = 0;
         }
-      }
-    });
+
+        updateScore();
+        updateStreak();
+
+        // Render result
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = renderResult(serverMyChoice, theirChoice, result, myScore, theirScore, winStreak);
+        resultDiv.style.display = 'block';
+        document.getElementById('gameStatus').textContent = '';
+      });
+
+      // Reconnection handling - simplified
+      socket.on('reconnected', (state) => {
+        console.log('[CLIENT] Reconnected:', state);
+        currentRoom = state.roomId;
+        myPlayerIndex = state.playerIndex;
+        myScore = state.myScore;
+        theirScore = state.theirScore;
+        winStreak = 0; // Reset streak on reconnect
+
+        // Update URL
+        const newUrl = window.location.pathname + '?room=' + state.roomId;
+        window.history.pushState({}, '', newUrl);
+
+        updateScore();
+        resetGameUI();
+        showScreen('game');
+
+        if (state.playerCount === 1) {
+          document.getElementById('gameStatus').textContent = 'waiting for opponent...';
+        } else if (state.status === 'playing') {
+          document.getElementById('gameStatus').textContent = 'pick one!';
+          // Timer will be started by the start_round event that follows
+        } else if (state.lastGameResult) {
+          // Show last result
+          const lastResult = state.lastGameResult;
+          const mySlot = state.playerIndex - 1;
+          const myLastChoice = lastResult.choices[mySlot];
+          const theirLastChoice = lastResult.choices[mySlot === 0 ? 1 : 0];
+
+          let resultForMe;
+          if (lastResult.result === 'tie') {
+            resultForMe = 'tie';
+          } else if ((lastResult.result === 'player1' && mySlot === 0) || (lastResult.result === 'player2' && mySlot === 1)) {
+            resultForMe = 'win';
+          } else {
+            resultForMe = 'lose';
+          }
+
+          const resultDiv = document.getElementById('result');
+          resultDiv.innerHTML = renderResult(myLastChoice, theirLastChoice, resultForMe, myScore, theirScore, 0);
+          resultDiv.style.display = 'block';
+          document.getElementById('gameStatus').textContent = '';
+        } else {
+          document.getElementById('gameStatus').textContent = 'waiting for next round...';
+        }
+
+        showError('reconnected! :3');
+      });
+
+      socket.on('opponent_disconnected', () => {
+        console.log('[CLIENT] Opponent disconnected');
+        if (timerInterval) clearInterval(timerInterval);
+
+        document.getElementById('gameStatus').textContent = 'opponent disconnected... waiting';
+
+        const resultDiv = document.getElementById('result');
+        if (resultDiv && resultDiv.style.display === 'block') {
+          const playAgainBtn = resultDiv.querySelector('button');
+          if (playAgainBtn) {
+            playAgainBtn.textContent = 'waiting for reconnect...';
+            playAgainBtn.disabled = true;
+          }
+        }
+      });
+
+      socket.on('player_reconnected', () => {
+        console.log('[CLIENT] Opponent reconnected');
+        showError('opponent reconnected! :3');
+
+        const gameStatus = document.getElementById('gameStatus');
+        if (gameStatus && gameStatus.textContent.includes('disconnected')) {
+          gameStatus.textContent = 'opponent reconnected!';
+        }
+
+        const resultDiv = document.getElementById('result');
+        if (resultDiv && resultDiv.style.display === 'block') {
+          const playAgainBtn = resultDiv.querySelector('button');
+          if (playAgainBtn) {
+            playAgainBtn.textContent = 'play again? :p';
+            playAgainBtn.disabled = false;
+          }
+        }
+      });
+
+      socket.on('player_left', () => {
+        console.log('[CLIENT] Opponent left the game');
+        if (timerInterval) clearInterval(timerInterval);
+        showPlayerLeftDialog();
+      });
+
+      socket.on('error', (message) => {
+        console.error('[CLIENT ERROR]', message);
+        showError(message);
+      });
+
+      socket.on('reset_requested', () => {
+        const scoreDiv = document.getElementById('score');
+        scoreDiv.textContent = 'friend wants to reset! (click to agree)';
+        scoreDiv.classList.add('reset-incoming');
+      });
+
+      socket.on('reset_cancelled', () => {
+        const scoreDiv = document.getElementById('score');
+        scoreDiv.classList.remove('pending-reset');
+        scoreDiv.classList.remove('reset-incoming');
+        updateScore();
+      });
+
+      socket.on('score_reset', () => {
+        myScore = 0;
+        theirScore = 0;
+        winStreak = 0;
+        const scoreDiv = document.getElementById('score');
+        scoreDiv.classList.remove('pending-reset');
+        scoreDiv.classList.remove('reset-incoming');
+        updateScore();
+        updateStreak();
+      });
+
+      socket.on('ping_response', ({ timestamp }) => {
+        myPing = Date.now() - timestamp;
+        if (debugMode) {
+          document.getElementById('myPing').textContent = myPing;
+        }
+      });
+
+      socket.on('receive_reaction', ({ emoji }) => {
+        displayReaction(emoji);
+      });
+    }
   </script>
 </body>
 </html>

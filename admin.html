@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RPS Admin</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Courier New', monospace;
+      background: #0a0a0a;
+      color: #00ff00;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 1.5em;
+      margin-bottom: 20px;
+      color: #00ff00;
+    }
+
+    h2 {
+      font-size: 1.1em;
+      margin: 20px 0 10px 0;
+      color: #888;
+      border-bottom: 1px solid #333;
+      padding-bottom: 5px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .stat-box {
+      background: #111;
+      border: 1px solid #333;
+      padding: 15px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 2em;
+      color: #00ff00;
+    }
+
+    .stat-label {
+      font-size: 0.8em;
+      color: #666;
+      margin-top: 5px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 0.9em;
+    }
+
+    th, td {
+      border: 1px solid #333;
+      padding: 8px 12px;
+      text-align: left;
+    }
+
+    th {
+      background: #1a1a1a;
+      color: #888;
+      font-weight: normal;
+    }
+
+    tr:hover {
+      background: #1a1a1a;
+    }
+
+    .status-playing {
+      color: #ffff00;
+    }
+
+    .status-waiting {
+      color: #00ff00;
+    }
+
+    .connected {
+      color: #00ff00;
+    }
+
+    .disconnected {
+      color: #ff4444;
+    }
+
+    .btn {
+      background: #222;
+      border: 1px solid #444;
+      color: #00ff00;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.8em;
+    }
+
+    .btn:hover {
+      background: #333;
+    }
+
+    .logs-container {
+      background: #111;
+      border: 1px solid #333;
+      padding: 10px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 0.85em;
+    }
+
+    .log-entry {
+      margin: 3px 0;
+      padding: 3px 0;
+      border-bottom: 1px solid #222;
+    }
+
+    .log-time {
+      color: #666;
+      margin-right: 10px;
+    }
+
+    .log-event {
+      color: #00aaff;
+      margin-right: 10px;
+    }
+
+    .log-data {
+      color: #888;
+    }
+
+    .refresh-info {
+      color: #444;
+      font-size: 0.8em;
+      margin-bottom: 10px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .tab {
+      background: #111;
+      border: 1px solid #333;
+      color: #666;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .tab.active {
+      color: #00ff00;
+      border-color: #00ff00;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .ping-good { color: #00ff00; }
+    .ping-medium { color: #ffff00; }
+    .ping-bad { color: #ff4444; }
+
+    #selectedRoomLogs {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>> RPS Admin Panel</h1>
+  <div class="refresh-info">Auto-refresh: 3s | <span id="lastUpdate">-</span></div>
+
+  <div class="stats-grid">
+    <div class="stat-box">
+      <div class="stat-value" id="statUptime">-</div>
+      <div class="stat-label">Uptime</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value" id="statRooms">-</div>
+      <div class="stat-label">Active Rooms</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value" id="statSessions">-</div>
+      <div class="stat-label">Sessions</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value" id="statGames">-</div>
+      <div class="stat-label">Games Played</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-value" id="statConnections">-</div>
+      <div class="stat-label">Total Connections</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('rooms')">Rooms</button>
+    <button class="tab" onclick="showTab('sessions')">Sessions</button>
+  </div>
+
+  <div id="roomsTab" class="tab-content active">
+    <h2>Active Rooms</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Room ID</th>
+          <th>Status</th>
+          <th>Score</th>
+          <th>Rounds</th>
+          <th>Players</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="roomsTable">
+        <tr><td colspan="6">Loading...</td></tr>
+      </tbody>
+    </table>
+
+    <div id="selectedRoomLogs" style="display: none;">
+      <h2>Room Logs: <span id="selectedRoomId">-</span></h2>
+      <div class="logs-container" id="logsContainer">
+        <div class="log-entry">Select a room to view logs</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sessionsTab" class="tab-content">
+    <h2>Connected Sessions <button class="btn" onclick="cleanupSessions()" style="margin-left: 10px;">Cleanup Inactive</button></h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Session ID</th>
+          <th>IP Address</th>
+          <th>Ping</th>
+          <th>Inactive</th>
+          <th>Room</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="sessionsTable">
+        <tr><td colspan="6">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    let currentRoomLogs = null;
+
+    function formatUptime(ms) {
+      const seconds = Math.floor(ms / 1000);
+      const hours = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      return `${hours}h ${mins}m`;
+    }
+
+    function formatTime(timestamp) {
+      return new Date(timestamp).toLocaleTimeString();
+    }
+
+    function getPingClass(ping) {
+      if (!ping) return '';
+      if (ping < 50) return 'ping-good';
+      if (ping < 150) return 'ping-medium';
+      return 'ping-bad';
+    }
+
+    async function fetchStats() {
+      try {
+        const res = await fetch('/api/admin/stats');
+        const stats = await res.json();
+
+        document.getElementById('statUptime').textContent = formatUptime(stats.uptime);
+        document.getElementById('statRooms').textContent = stats.activeRooms;
+        document.getElementById('statSessions').textContent = stats.activeSessions;
+        document.getElementById('statGames').textContent = stats.totalGamesPlayed;
+        document.getElementById('statConnections').textContent = stats.totalConnections;
+      } catch (e) {
+        console.error('Failed to fetch stats:', e);
+      }
+    }
+
+    async function fetchRooms() {
+      try {
+        const res = await fetch('/api/admin/rooms');
+        const rooms = await res.json();
+
+        const tbody = document.getElementById('roomsTable');
+
+        if (rooms.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="color: #666;">No active rooms</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = rooms.map(room => {
+          const players = room.players.map(p => {
+            const connClass = p.connected ? 'connected' : 'disconnected';
+            const pingClass = getPingClass(p.ping);
+            return `P${p.slot}: ${p.ip} <span class="${pingClass}">${p.ping || '?'}ms</span> <span class="${connClass}">[${p.connected ? 'ON' : 'OFF'}]</span>`;
+          }).join('<br>') || '<span style="color: #666;">-</span>';
+
+          const statusClass = room.status === 'playing' ? 'status-playing' : 'status-waiting';
+
+          return `
+            <tr>
+              <td>${room.roomId}</td>
+              <td class="${statusClass}">${room.status}</td>
+              <td>${room.scores[0]} - ${room.scores[1]}</td>
+              <td>${room.roundsPlayed}</td>
+              <td>${players}</td>
+              <td><button class="btn" onclick="viewLogs('${room.roomId}')">Logs</button></td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error('Failed to fetch rooms:', e);
+      }
+    }
+
+    function formatInactive(seconds) {
+      if (seconds === null || seconds === undefined) return '-';
+      if (seconds < 60) return `${seconds}s`;
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+      return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+    }
+
+    function getInactiveClass(seconds) {
+      if (seconds === null) return '';
+      if (seconds < 60) return 'ping-good';
+      if (seconds < 180) return 'ping-medium';
+      return 'ping-bad';
+    }
+
+    async function fetchSessions() {
+      try {
+        const res = await fetch('/api/admin/sessions');
+        const sessions = await res.json();
+
+        const tbody = document.getElementById('sessionsTable');
+
+        if (sessions.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="color: #666;">No connected sessions</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = sessions.map(s => {
+          const pingClass = getPingClass(s.ping);
+          const inactiveClass = getInactiveClass(s.inactiveSeconds);
+
+          return `
+            <tr>
+              <td>${s.sessionId}</td>
+              <td>${s.ip}</td>
+              <td class="${pingClass}">${s.ping || '-'}ms</td>
+              <td class="${inactiveClass}">${formatInactive(s.inactiveSeconds)}</td>
+              <td>${s.roomId || '-'}</td>
+              <td><button class="btn" onclick="kickSession('${s.sessionId}')">Kick</button></td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error('Failed to fetch sessions:', e);
+      }
+    }
+
+    async function kickSession(sessionId) {
+      if (!confirm(`Kick session ${sessionId}?`)) return;
+
+      try {
+        const res = await fetch(`/api/admin/kick/${sessionId}`, { method: 'POST' });
+        if (res.ok) {
+          await refresh();
+        } else {
+          alert('Failed to kick session');
+        }
+      } catch (e) {
+        console.error('Failed to kick session:', e);
+      }
+    }
+
+    async function cleanupSessions() {
+      try {
+        const res = await fetch('/api/admin/cleanup', { method: 'POST' });
+        const data = await res.json();
+        alert(`Cleaned up ${data.cleaned} inactive session(s)`);
+        await refresh();
+      } catch (e) {
+        console.error('Failed to cleanup:', e);
+      }
+    }
+
+    async function viewLogs(roomId) {
+      currentRoomLogs = roomId;
+      document.getElementById('selectedRoomLogs').style.display = 'block';
+      document.getElementById('selectedRoomId').textContent = roomId;
+      await fetchLogs(roomId);
+    }
+
+    async function fetchLogs(roomId) {
+      try {
+        const res = await fetch(`/api/admin/room/${roomId}/logs`);
+        const logs = await res.json();
+
+        const container = document.getElementById('logsContainer');
+
+        if (logs.length === 0) {
+          container.innerHTML = '<div class="log-entry" style="color: #666;">No logs yet</div>';
+          return;
+        }
+
+        container.innerHTML = logs.map(log => {
+          const time = formatTime(log.time);
+          const data = Object.keys(log.data).length > 0 ? JSON.stringify(log.data) : '';
+
+          return `
+            <div class="log-entry">
+              <span class="log-time">${time}</span>
+              <span class="log-event">${log.event}</span>
+              <span class="log-data">${data}</span>
+            </div>
+          `;
+        }).join('');
+
+        // Scroll to bottom
+        container.scrollTop = container.scrollHeight;
+      } catch (e) {
+        console.error('Failed to fetch logs:', e);
+      }
+    }
+
+    function showTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
+      document.getElementById(`${tabName}Tab`).classList.add('active');
+    }
+
+    async function refresh() {
+      await Promise.all([
+        fetchStats(),
+        fetchRooms(),
+        fetchSessions()
+      ]);
+
+      if (currentRoomLogs) {
+        await fetchLogs(currentRoomLogs);
+      }
+
+      document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+    }
+
+    // Initial load
+    refresh();
+
+    // Auto-refresh every 3 seconds
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>
