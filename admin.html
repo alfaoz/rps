@@ -261,6 +261,9 @@
   </div>
 
   <script>
+    // Detect base path from current URL
+    const BASE_PATH = window.location.pathname.startsWith('/beta') ? '/beta' : '';
+
     let currentRoomLogs = null;
 
     function formatUptime(ms) {
@@ -283,7 +286,7 @@
 
     async function fetchStats() {
       try {
-        const res = await fetch('/api/admin/stats');
+        const res = await fetch(`${BASE_PATH}/api/admin/stats`);
         const stats = await res.json();
 
         document.getElementById('statUptime').textContent = formatUptime(stats.uptime);
@@ -298,7 +301,7 @@
 
     async function fetchRooms() {
       try {
-        const res = await fetch('/api/admin/rooms');
+        const res = await fetch(`${BASE_PATH}/api/admin/rooms`);
         const rooms = await res.json();
 
         const tbody = document.getElementById('roomsTable');
@@ -349,7 +352,7 @@
 
     async function fetchSessions() {
       try {
-        const res = await fetch('/api/admin/sessions');
+        const res = await fetch(`${BASE_PATH}/api/admin/sessions`);
         const sessions = await res.json();
 
         const tbody = document.getElementById('sessionsTable');
@@ -383,7 +386,7 @@
       if (!confirm(`Kick session ${sessionId}?`)) return;
 
       try {
-        const res = await fetch(`/api/admin/kick/${sessionId}`, { method: 'POST' });
+        const res = await fetch(`${BASE_PATH}/api/admin/kick/${sessionId}`, { method: 'POST' });
         if (res.ok) {
           await refresh();
         } else {
@@ -396,7 +399,7 @@
 
     async function cleanupSessions() {
       try {
-        const res = await fetch('/api/admin/cleanup', { method: 'POST' });
+        const res = await fetch(`${BASE_PATH}/api/admin/cleanup`, { method: 'POST' });
         const data = await res.json();
         alert(`Cleaned up ${data.cleaned} inactive session(s)`);
         await refresh();
@@ -414,7 +417,7 @@
 
     async function fetchLogs(roomId) {
       try {
-        const res = await fetch(`/api/admin/room/${roomId}/logs`);
+        const res = await fetch(`${BASE_PATH}/api/admin/room/${roomId}/logs`);
         const logs = await res.json();
 
         const container = document.getElementById('logsContainer');

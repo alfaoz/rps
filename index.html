@@ -429,7 +429,16 @@
     </div>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // Detect base path from current URL or default to empty
+    const BASE_PATH = window.location.pathname.startsWith('/beta') ? '/beta' : '';
+  </script>
+  <script>
+    // Dynamic socket.io script loading
+    const socketScript = document.createElement('script');
+    socketScript.src = `${BASE_PATH}/socket.io/socket.io.js`;
+    document.head.appendChild(socketScript);
+  </script>
   <script>
     let sessionId = null;
     let socket = null;
@@ -452,13 +461,18 @@
 
     // Initialize session and socket connection
     async function initializeSession() {
+      // Wait for socket.io to load
+      while (typeof io === 'undefined') {
+        await new Promise(r => setTimeout(r, 50));
+      }
+
       try {
-        const response = await fetch('/api/session', { credentials: 'include' });
+        const response = await fetch(`${BASE_PATH}/api/session`, { credentials: 'include' });
         const data = await response.json();
         sessionId = data.sessionId;
         console.log('Session ID:', sessionId);
 
-        socket = io();
+        socket = io({ path: `${BASE_PATH}/socket.io` });
 
         return new Promise((resolve) => {
           socket.on('connect', () => {

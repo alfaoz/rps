@@ -8,10 +8,23 @@ const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+
+// ===================
+// ENVIRONMENT CONFIG
+// ===================
+const BASE_PATH = process.env.BASE_PATH || '';
+const io = socketIo(server, {
+  path: `${BASE_PATH}/socket.io`
+});
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Serve config to frontend
+app.get(`${BASE_PATH}/config.js`, (req, res) => {
+  res.type('application/javascript');
+  res.send(`window.RPS_CONFIG = { basePath: "${BASE_PATH}" };`);
+});
 
 // ===================
 // ADMIN CONFIGURATION
@@ -130,23 +143,23 @@ function serverLog(message) {
 // STATIC FILES
 // ===================
 // Serve admin page before static middleware
-app.get('/admin', adminAuth, (req, res) => {
+app.get(`${BASE_PATH}/admin`, adminAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
 // Serve static files but exclude admin.html from direct access
-app.use((req, res, next) => {
+app.use(BASE_PATH || '/', (req, res, next) => {
   if (req.path === '/admin.html') {
     return res.status(404).send('Not found');
   }
   next();
 });
-app.use(express.static(__dirname));
+app.use(BASE_PATH || '/', express.static(__dirname));
 
 // ===================
 // ADMIN API ENDPOINTS
 // ===================
-app.get('/api/admin/stats', adminAuth, (req, res) => {
+app.get(`${BASE_PATH}/api/admin/stats`, adminAuth, (req, res) => {
   const uptime = Date.now() - serverStats.startTime;
   res.json({
     uptime,
@@ -157,7 +170,7 @@ app.get('/api/admin/stats', adminAuth, (req, res) => {
   });
 });
 
-app.get('/api/admin/rooms', adminAuth, (req, res) => {
+app.get(`${BASE_PATH}/api/admin/rooms`, adminAuth, (req, res) => {
   const roomList = [];
   for (const roomId in rooms) {
     const room = rooms[roomId];
@@ -189,12 +202,12 @@ app.get('/api/admin/rooms', adminAuth, (req, res) => {
   res.json(roomList);
 });
 
-app.get('/api/admin/room/:roomId/logs', adminAuth, (req, res) => {
+app.get(`${BASE_PATH}/api/admin/room/:roomId/logs`, adminAuth, (req, res) => {
   const logs = roomLogs[req.params.roomId] || [];
   res.json(logs);
 });
 
-app.get('/api/admin/sessions', adminAuth, (req, res) => {
+app.get(`${BASE_PATH}/api/admin/sessions`, adminAuth, (req, res) => {
   const sessions = [];
   const now = Date.now();
   for (const sessionId in sessionToSocket) {
@@ -215,7 +228,7 @@ app.get('/api/admin/sessions', adminAuth, (req, res) => {
   res.json(sessions);
 });
 
-app.post('/api/admin/kick/:sessionId', adminAuth, (req, res) => {
+app.post(`${BASE_PATH}/api/admin/kick/:sessionId`, adminAuth, (req, res) => {
   const { sessionId } = req.params;
 
   // Find full session ID from partial
@@ -251,7 +264,7 @@ app.post('/api/admin/kick/:sessionId', adminAuth, (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/admin/cleanup', adminAuth, (req, res) => {
+app.post(`${BASE_PATH}/api/admin/cleanup`, adminAuth, (req, res) => {
   const cleaned = cleanupInactiveSessions();
   res.json({ cleaned });
 });
@@ -259,7 +272,7 @@ app.post('/api/admin/cleanup', adminAuth, (req, res) => {
 // ===================
 // GAME API
 // ===================
-app.get('/api/session', (req, res) => {
+app.get(`${BASE_PATH}/api/session`, (req, res) => {
   let sessionId = req.cookies.sessionId;
 
   if (!sessionId) {
@@ -792,8 +805,8 @@ function determineWinner(choice1, choice2) {
 // ===================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  serverLog(`Server running on http://localhost:${PORT}`);
-  serverLog(`Admin panel: http://localhost:${PORT}/admin`);
+  serverLog(`Server running on http://localhost:${PORT}${BASE_PATH}/`);
+  serverLog(`Admin panel: http://localhost:${PORT}${BASE_PATH}/admin`);
   console.log('Type /help for server commands\n');
 });
 
