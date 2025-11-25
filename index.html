@@ -50,10 +50,12 @@
       background: white;
       color: black;
       border: 2px solid white;
-      padding: 10px 20px;
+      padding: 12px 24px;
       font-size: 1em;
       cursor: pointer;
       margin: 5px 5px;
+      transition: all 0.2s ease;
+      text-transform: lowercase;
     }
 
     button.waiting-opponent {
@@ -273,6 +275,54 @@
       border: 2px solid white;
     }
 
+    .menu-section {
+      margin: 30px 0;
+    }
+
+    .menu-section-title {
+      font-size: 0.9em;
+      opacity: 0.5;
+      margin-bottom: 15px;
+      text-transform: lowercase;
+    }
+
+    .menu-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 300px;
+      margin: 0 auto;
+    }
+
+    .menu-buttons button {
+      width: 100%;
+      margin: 0;
+    }
+
+    .menu-divider {
+      width: 60px;
+      height: 2px;
+      background: white;
+      margin: 30px auto;
+      opacity: 0.3;
+    }
+
+    .menu-input-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .menu-input-group input {
+      margin: 0;
+      width: 200px;
+    }
+
+    .menu-input-group button {
+      max-width: 200px;
+    }
+
     .timer {
       font-size: 2em;
       margin: 5px 0;
@@ -377,13 +427,24 @@
 
     <!-- Menu Screen -->
     <div id="menu" class="screen active">
-      <button onclick="createRoom()">create game</button>
-      <br>
-      <button onclick="createAIRoom()">play with ai</button>
-      <br>
-      <input type="text" id="roomInput" placeholder="room code" maxlength="5">
-      <br>
-      <button onclick="joinRoom()">join game</button>
+      <div class="menu-section">
+        <div class="menu-section-title">start new game</div>
+        <div class="menu-buttons">
+          <button onclick="createRoom()">vs friend</button>
+          <button onclick="createAIRoom()">vs ai</button>
+        </div>
+      </div>
+
+      <div class="menu-divider"></div>
+
+      <div class="menu-section">
+        <div class="menu-section-title">join existing game</div>
+        <div class="menu-input-group">
+          <input type="text" id="roomInput" placeholder="enter room code" maxlength="5">
+          <button onclick="joinRoom()">join</button>
+        </div>
+      </div>
+
       <div id="menuError" class="error" style="display: none;"></div>
     </div>
 
