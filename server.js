@@ -76,8 +76,30 @@ const serverStats = {
 };
 
 // AI tracking data
-const aiPlayers = {};        // sessionId -> { roomId, slot, difficulty }
+const aiPlayers = {};        // sessionId -> { roomId, slot, difficulty, state }
 const AI_SESSION_PREFIX = 'ai_';
+
+// AI state structure for each AI player
+function createAIState(difficulty) {
+  return {
+    difficulty: difficulty || 'hard',
+    opponentHistory: [],
+    aiHistory: [],
+    resultHistory: [],
+    overallFrequency: { rock: 0, paper: 0, scissors: 0 },
+    recentFrequency: { rock: 0, paper: 0, scissors: 0 },
+    afterWin: { rock: 0, paper: 0, scissors: 0 },
+    afterLoss: { rock: 0, paper: 0, scissors: 0 },
+    afterTie: { rock: 0, paper: 0, scissors: 0 },
+    transitionMatrix: {
+      'rock->rock': 0, 'rock->paper': 0, 'rock->scissors': 0,
+      'paper->rock': 0, 'paper->paper': 0, 'paper->scissors': 0,
+      'scissors->rock': 0, 'scissors->paper': 0, 'scissors->scissors': 0
+    },
+    currentStreak: { choice: null, count: 0 },
+    longestStreak: { choice: null, count: 0 }
+  };
+}
 
 // ===================
 // SESSION CLEANUP
@@ -392,32 +414,366 @@ function getCountryCode(ip) {
 // AI SYSTEM
 // ===================
 
-/**
- * AI Decision Algorithm
- * This function determines what choice the AI makes.
- * MODULAR: Replace this function to change AI behavior.
- *
- * @param {Object} context - Game context for AI decision
- * @param {string} context.roomId - Room ID
- * @param {number} context.slot - AI's player slot (0 or 1)
- * @param {Array} context.scores - Current scores [p1, p2]
- * @param {Object} context.lastResult - Last game result
- * @returns {string} - 'rock', 'paper', or 'scissors'
- */
-function makeAIDecision(context) {
-  // CURRENT ALGORITHM: Random selection
-  // TODO: Implement smarter algorithm here
-  const choices = ['rock', 'paper', 'scissors'];
-  return choices[Math.floor(Math.random() * choices.length)];
+// Helper: Returns what beats a choice
+function beats(choice) {
+  const counters = { rock: 'paper', paper: 'scissors', scissors: 'rock' };
+  return counters[choice];
 }
 
-function createAIPlayer(roomId, slot) {
+// Helper: Get most frequent choice from frequency object
+function getMostFrequent(freq) {
+  let max = -1;
+  let mostFrequent = 'rock';
+  for (const choice of ['rock', 'paper', 'scissors']) {
+    if (freq[choice] > max) {
+      max = freq[choice];
+      mostFrequent = choice;
+    }
+  }
+  return mostFrequent;
+}
+
+// Helper: Sum of frequency object values
+function sumFreq(freq) {
+  return freq.rock + freq.paper + freq.scissors;
+}
+
+// Helper: Weighted random choice
+function weightedRandomChoice(weights) {
+  const total = weights.rock + weights.paper + weights.scissors;
+  if (total === 0) {
+    const choices = ['rock', 'paper', 'scissors'];
+    return choices[Math.floor(Math.random() * choices.length)];
+  }
+
+  let rand = Math.random() * total;
+  for (const choice of ['rock', 'paper', 'scissors']) {
+    rand -= weights[choice];
+    if (rand <= 0) return choice;
+  }
+  return 'rock';
+}
+
+// Update AI state with latest game result
+function updateAIState(aiState, opponentChoice, aiChoice, result) {
+  // Add to histories
+  aiState.opponentHistory.push(opponentChoice);
+  aiState.aiHistory.push(aiChoice);
+  aiState.resultHistory.push(result);
+
+  // Update overall frequency
+  aiState.overallFrequency[opponentChoice]++;
+
+  // Update recent frequency (last 10)
+  const recentMoves = aiState.opponentHistory.slice(-10);
+  aiState.recentFrequency = { rock: 0, paper: 0, scissors: 0 };
+  for (const move of recentMoves) {
+    aiState.recentFrequency[move]++;
+  }
+
+  // Update psychological patterns (what they play AFTER win/loss/tie)
+  if (aiState.resultHistory.length >= 2) {
+    const prevResult = aiState.resultHistory[aiState.resultHistory.length - 2];
+    if (prevResult === 'win') {
+      aiState.afterWin[opponentChoice]++;
+    } else if (prevResult === 'loss') {
+      aiState.afterLoss[opponentChoice]++;
+    } else {
+      aiState.afterTie[opponentChoice]++;
+    }
+  }
+
+  // Update transition matrix
+  if (aiState.opponentHistory.length >= 2) {
+    const from = aiState.opponentHistory[aiState.opponentHistory.length - 2];
+    const to = opponentChoice;
+    aiState.transitionMatrix[`${from}->${to}`]++;
+  }
+
+  // Update streak
+  if (aiState.opponentHistory.length >= 2) {
+    const last = aiState.opponentHistory[aiState.opponentHistory.length - 1];
+    const secondLast = aiState.opponentHistory[aiState.opponentHistory.length - 2];
+
+    if (last === secondLast) {
+      if (aiState.currentStreak.choice === last) {
+        aiState.currentStreak.count++;
+      } else {
+        aiState.currentStreak = { choice: last, count: 2 };
+      }
+
+      if (aiState.currentStreak.count > aiState.longestStreak.count) {
+        aiState.longestStreak = { ...aiState.currentStreak };
+      }
+    } else {
+      aiState.currentStreak = { choice: null, count: 0 };
+    }
+  }
+}
+
+// Easy difficulty: 70% random, 30% basic counter
+function easyStrategy(aiState) {
+  if (Math.random() < 0.7 || aiState.opponentHistory.length < 5) {
+    const choices = ['rock', 'paper', 'scissors'];
+    return choices[Math.floor(Math.random() * choices.length)];
+  }
+
+  const mostPlayed = getMostFrequent(aiState.overallFrequency);
+  return beats(mostPlayed);
+}
+
+// Medium difficulty: Frequency + anti-repetition + loss-switching
+function mediumStrategy(aiState) {
+  if (aiState.opponentHistory.length < 3) {
+    const choices = ['rock', 'paper', 'scissors'];
+    return choices[Math.floor(Math.random() * choices.length)];
+  }
+
+  const weights = { rock: 33, paper: 33, scissors: 33 };
+
+  // Factor 1: Recent frequency
+  if (aiState.opponentHistory.length >= 5) {
+    const recent = aiState.opponentHistory.slice(-10);
+    for (const choice of recent) {
+      weights[beats(choice)] += 4;
+    }
+  }
+
+  // Factor 2: Anti-repetition
+  if (aiState.opponentHistory.length >= 2) {
+    const last = aiState.opponentHistory[aiState.opponentHistory.length - 1];
+    const secondLast = aiState.opponentHistory[aiState.opponentHistory.length - 2];
+    if (last === secondLast) {
+      for (const choice of ['rock', 'paper', 'scissors']) {
+        if (choice !== last) {
+          weights[beats(choice)] += 3;
+        }
+      }
+    }
+  }
+
+  // Factor 3: Post-loss switching
+  if (aiState.resultHistory.length >= 1) {
+    const lastResult = aiState.resultHistory[aiState.resultHistory.length - 1];
+    if (lastResult === 'win') {
+      const lastTheyPlayed = aiState.opponentHistory[aiState.opponentHistory.length - 1];
+      for (const choice of ['rock', 'paper', 'scissors']) {
+        if (choice !== lastTheyPlayed) {
+          weights[beats(choice)] += 3;
+        }
+      }
+    }
+  }
+
+  return weightedRandomChoice(weights);
+}
+
+// Hard difficulty: Multi-layer analysis
+function hardStrategy(aiState) {
+  if (aiState.opponentHistory.length < 3) {
+    return 'rock'; // Statistically most common opener
+  }
+
+  const weights = { rock: 20, paper: 20, scissors: 20 };
+
+  // LAYER 1: Frequency Analysis
+  const recentMoves = aiState.opponentHistory.slice(-10);
+  for (const choice of recentMoves) {
+    weights[beats(choice)] += 2;
+  }
+
+  // LAYER 2: Psychological Patterns
+  if (aiState.resultHistory.length >= 1) {
+    const lastResult = aiState.resultHistory[aiState.resultHistory.length - 1];
+
+    if (lastResult === 'win') {
+      for (const choice of ['rock', 'paper', 'scissors']) {
+        if (aiState.afterLoss[choice] > 0) {
+          weights[beats(choice)] += aiState.afterLoss[choice] * 0.3;
+        }
+      }
+    } else if (lastResult === 'loss') {
+      const lastChoice = aiState.opponentHistory[aiState.opponentHistory.length - 1];
+      weights[beats(lastChoice)] += 6;
+      for (const choice of ['rock', 'paper', 'scissors']) {
+        if (choice !== lastChoice) {
+          weights[beats(choice)] += 4;
+        }
+      }
+    } else {
+      for (const choice of ['rock', 'paper', 'scissors']) {
+        if (aiState.afterTie[choice] > 0) {
+          weights[beats(choice)] += aiState.afterTie[choice] * 0.3;
+        }
+      }
+    }
+  }
+
+  // LAYER 3: Streak Detection
+  if (aiState.currentStreak.count >= 2) {
+    const streakChoice = aiState.currentStreak.choice;
+    const boost = aiState.currentStreak.count === 2 ? 5 : 10;
+
+    for (const choice of ['rock', 'paper', 'scissors']) {
+      if (choice !== streakChoice) {
+        weights[beats(choice)] += boost;
+      }
+    }
+  }
+
+  // LAYER 4: Transition Patterns
+  if (aiState.opponentHistory.length >= 2) {
+    const lastChoice = aiState.opponentHistory[aiState.opponentHistory.length - 1];
+    for (const nextChoice of ['rock', 'paper', 'scissors']) {
+      const transitionKey = `${lastChoice}->${nextChoice}`;
+      const count = aiState.transitionMatrix[transitionKey];
+      if (count > 0) {
+        weights[beats(nextChoice)] += count * 2.5;
+      }
+    }
+  }
+
+  return weightedRandomChoice(weights);
+}
+
+// Expert difficulty: All layers + meta-detection
+function expertStrategy(aiState) {
+  if (aiState.opponentHistory.length < 5) {
+    return hardStrategy(aiState);
+  }
+
+  const weights = { rock: 10, paper: 10, scissors: 10 };
+
+  // LAYER 1: Deep Frequency Analysis
+  const overallMostPlayed = getMostFrequent(aiState.overallFrequency);
+  const recentMostPlayed = getMostFrequent(aiState.recentFrequency);
+
+  if (recentMostPlayed !== overallMostPlayed) {
+    weights[beats(recentMostPlayed)] += 8;
+  } else {
+    weights[beats(overallMostPlayed)] += 5;
+  }
+
+  // LAYER 2: Multi-depth Psychological Model
+  if (aiState.resultHistory.length >= 1) {
+    const lastResult = aiState.resultHistory[aiState.resultHistory.length - 1];
+
+    if (lastResult === 'win') {
+      const lossPattern = getMostFrequent(aiState.afterLoss);
+      const totalLosses = sumFreq(aiState.afterLoss);
+      if (totalLosses > 0) {
+        const lossPatternStrength = aiState.afterLoss[lossPattern] / totalLosses;
+        if (lossPatternStrength > 0.6) {
+          weights[beats(lossPattern)] += 15;
+        } else {
+          const lastPlayed = aiState.opponentHistory[aiState.opponentHistory.length - 1];
+          for (const choice of ['rock', 'paper', 'scissors']) {
+            if (choice !== lastPlayed) {
+              weights[beats(choice)] += 8;
+            }
+          }
+        }
+      }
+    } else if (lastResult === 'loss') {
+      const winPattern = getMostFrequent(aiState.afterWin);
+      const totalWins = sumFreq(aiState.afterWin);
+      if (totalWins > 0) {
+        const winPatternStrength = aiState.afterWin[winPattern] / totalWins;
+        if (winPatternStrength > 0.6) {
+          weights[beats(winPattern)] += 15;
+        } else {
+          const lastPlayed = aiState.opponentHistory[aiState.opponentHistory.length - 1];
+          weights[beats(lastPlayed)] += 10;
+          for (const choice of ['rock', 'paper', 'scissors']) {
+            if (choice !== lastPlayed) {
+              weights[beats(choice)] += 5;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // LAYER 3: Advanced Streak & Anti-Pattern
+  if (aiState.currentStreak.count >= 2) {
+    const streakChoice = aiState.currentStreak.choice;
+    const boredomFactor = Math.min(aiState.currentStreak.count * 0.3, 0.95);
+
+    for (const choice of ['rock', 'paper', 'scissors']) {
+      if (choice !== streakChoice) {
+        weights[beats(choice)] += boredomFactor * 20;
+      }
+    }
+  }
+
+  // LAYER 4: Meta-Game Detection (detect if they're countering us)
+  if (aiState.opponentHistory.length >= 10 && aiState.aiHistory.length >= 10) {
+    let counteringCount = 0;
+    for (let i = Math.max(0, aiState.aiHistory.length - 10); i < aiState.aiHistory.length - 1; i++) {
+      const ourChoice = aiState.aiHistory[i];
+      const theirNextChoice = aiState.opponentHistory[i + 1];
+      if (theirNextChoice === beats(ourChoice)) {
+        counteringCount++;
+      }
+    }
+
+    if (counteringCount >= 6) {
+      // They're countering us! Add randomness
+      for (const choice of ['rock', 'paper', 'scissors']) {
+        weights[choice] += 30;
+      }
+    } else {
+      // Exploit harder
+      for (const choice of ['rock', 'paper', 'scissors']) {
+        weights[choice] *= 1.5;
+      }
+    }
+  }
+
+  return weightedRandomChoice(weights);
+}
+
+/**
+ * Main AI Decision Function
+ */
+function makeAIDecision(aiSessionId, opponentLastChoice) {
+  const aiPlayer = aiPlayers[aiSessionId];
+  if (!aiPlayer || !aiPlayer.state) {
+    const choices = ['rock', 'paper', 'scissors'];
+    return choices[Math.floor(Math.random() * choices.length)];
+  }
+
+  const aiState = aiPlayer.state;
+
+  let choice;
+  switch (aiState.difficulty) {
+    case 'easy':
+      choice = easyStrategy(aiState);
+      break;
+    case 'medium':
+      choice = mediumStrategy(aiState);
+      break;
+    case 'hard':
+      choice = hardStrategy(aiState);
+      break;
+    case 'expert':
+      choice = expertStrategy(aiState);
+      break;
+    default:
+      choice = hardStrategy(aiState);
+  }
+
+  return choice;
+}
+
+function createAIPlayer(roomId, slot, difficulty = 'hard') {
   const aiSessionId = AI_SESSION_PREFIX + uuidv4();
 
   aiPlayers[aiSessionId] = {
     roomId,
     slot,
-    difficulty: 'random' // Can be changed later for different AI levels
+    difficulty,
+    state: createAIState(difficulty)
   };
 
   // Track AI session data
@@ -426,7 +782,7 @@ function createAIPlayer(roomId, slot) {
     lastPing: 0,
     lastActivity: Date.now(),
     connectedAt: Date.now(),
-    userAgent: 'AI Bot'
+    userAgent: `AI Bot (${difficulty})`
   };
 
   return aiSessionId;
@@ -444,15 +800,14 @@ function handleAITurn(roomId) {
   for (let slot = 0; slot < 2; slot++) {
     const sessionId = room.sessions[slot];
     if (isAIPlayer(sessionId) && !room.choices[slot]) {
-      // AI needs to make a choice
-      const context = {
-        roomId,
-        slot,
-        scores: room.scores,
-        lastResult: room.lastGameResult
-      };
+      // Get opponent's last choice (if any)
+      const opponentSlot = slot === 0 ? 1 : 0;
+      let opponentLastChoice = null;
+      if (room.lastGameResult && room.lastGameResult.choices) {
+        opponentLastChoice = room.lastGameResult.choices[opponentSlot];
+      }
 
-      const choice = makeAIDecision(context);
+      const choice = makeAIDecision(sessionId, opponentLastChoice);
 
       // Delay AI choice slightly to feel more natural (500-1500ms)
       const delay = 500 + Math.random() * 1000;
@@ -471,6 +826,36 @@ function handleAITurn(roomId) {
           }
         }
       }, delay);
+    }
+  }
+}
+
+// Update AI state after each round
+function updateAIAfterRound(roomId, choices, result) {
+  const room = rooms[roomId];
+  if (!room || !room.hasAI) return;
+
+  for (let slot = 0; slot < 2; slot++) {
+    const sessionId = room.sessions[slot];
+    if (isAIPlayer(sessionId)) {
+      const aiPlayer = aiPlayers[sessionId];
+      if (aiPlayer && aiPlayer.state) {
+        const opponentSlot = slot === 0 ? 1 : 0;
+        const opponentChoice = choices[opponentSlot];
+        const aiChoice = choices[slot];
+
+        // Determine result from AI's perspective
+        let aiResult;
+        if (result === 'tie') {
+          aiResult = 'tie';
+        } else if ((result === 'player1' && slot === 0) || (result === 'player2' && slot === 1)) {
+          aiResult = 'win';
+        } else {
+          aiResult = 'loss';
+        }
+
+        updateAIState(aiPlayer.state, opponentChoice, aiChoice, aiResult);
+      }
     }
   }
 }
@@ -989,6 +1374,9 @@ function resolveGame(roomId) {
     myScore: room.scores[1],
     theirScore: room.scores[0]
   });
+
+  // Update AI state with this round's result
+  updateAIAfterRound(roomId, [choice1, choice2], result);
 
   room.choices = [null, null];
   room.status = 'waiting';
