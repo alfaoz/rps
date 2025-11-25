@@ -379,6 +379,8 @@
     <div id="menu" class="screen active">
       <button onclick="createRoom()">create game</button>
       <br>
+      <button onclick="createAIRoom()">play with ai</button>
+      <br>
       <input type="text" id="roomInput" placeholder="room code" maxlength="5">
       <br>
       <button onclick="joinRoom()">join game</button>
@@ -579,6 +581,18 @@
         return;
       }
       socket.emit('create_room');
+    }
+
+    function createAIRoom() {
+      if (!socket) {
+        showError('connecting... please wait');
+        return;
+      }
+      if (!isActiveTab) {
+        showError('game open in another tab!');
+        return;
+      }
+      socket.emit('create_ai_room');
     }
 
     function joinRoom() {

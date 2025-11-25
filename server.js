@@ -75,6 +75,10 @@ const serverStats = {
   startTime: Date.now()
 };
 
+// AI tracking data
+const aiPlayers = {};        // sessionId -> { roomId, slot, difficulty }
+const AI_SESSION_PREFIX = 'ai_';
+
 // ===================
 // SESSION CLEANUP
 // ===================
@@ -385,6 +389,93 @@ function getCountryCode(ip) {
 }
 
 // ===================
+// AI SYSTEM
+// ===================
+
+/**
+ * AI Decision Algorithm
+ * This function determines what choice the AI makes.
+ * MODULAR: Replace this function to change AI behavior.
+ *
+ * @param {Object} context - Game context for AI decision
+ * @param {string} context.roomId - Room ID
+ * @param {number} context.slot - AI's player slot (0 or 1)
+ * @param {Array} context.scores - Current scores [p1, p2]
+ * @param {Object} context.lastResult - Last game result
+ * @returns {string} - 'rock', 'paper', or 'scissors'
+ */
+function makeAIDecision(context) {
+  // CURRENT ALGORITHM: Random selection
+  // TODO: Implement smarter algorithm here
+  const choices = ['rock', 'paper', 'scissors'];
+  return choices[Math.floor(Math.random() * choices.length)];
+}
+
+function createAIPlayer(roomId, slot) {
+  const aiSessionId = AI_SESSION_PREFIX + uuidv4();
+
+  aiPlayers[aiSessionId] = {
+    roomId,
+    slot,
+    difficulty: 'random' // Can be changed later for different AI levels
+  };
+
+  // Track AI session data
+  sessionData[aiSessionId] = {
+    ip: 'AI',
+    lastPing: 0,
+    lastActivity: Date.now(),
+    connectedAt: Date.now(),
+    userAgent: 'AI Bot'
+  };
+
+  return aiSessionId;
+}
+
+function isAIPlayer(sessionId) {
+  return sessionId && sessionId.startsWith(AI_SESSION_PREFIX);
+}
+
+function handleAITurn(roomId) {
+  const room = rooms[roomId];
+  if (!room || room.status !== 'playing') return;
+
+  // Check if there's an AI player in this room
+  for (let slot = 0; slot < 2; slot++) {
+    const sessionId = room.sessions[slot];
+    if (isAIPlayer(sessionId) && !room.choices[slot]) {
+      // AI needs to make a choice
+      const context = {
+        roomId,
+        slot,
+        scores: room.scores,
+        lastResult: room.lastGameResult
+      };
+
+      const choice = makeAIDecision(context);
+
+      // Delay AI choice slightly to feel more natural (500-1500ms)
+      const delay = 500 + Math.random() * 1000;
+
+      setTimeout(() => {
+        // Double-check room still exists and AI hasn't chosen
+        if (rooms[roomId] && !rooms[roomId].choices[slot]) {
+          rooms[roomId].choices[slot] = choice;
+          logToRoom(roomId, 'choice', { player: slot + 1, choice, ai: true });
+
+          emitToRoom(roomId, 'player_ready', { player: slot + 1 });
+
+          // Check if both players have chosen
+          if (rooms[roomId].choices[0] && rooms[roomId].choices[1]) {
+            resolveGame(roomId);
+          }
+        }
+      }, delay);
+    }
+  }
+}
+
+// ===================
 // DISCONNECT HANDLING
 // ===================
 function startDisconnectGracePeriod(sessionId, roomId) {
@@ -577,6 +668,49 @@ io.on('connection', (socket) => {
     serverLog(`Room ${roomId} created`);
   });
 
+  socket.on('create_ai_room', () => {
+    const sessionId = socketToSession[socket.id];
+    if (!sessionId) {
+      socket.emit('error', 'No session');
+      return;
+    }
+
+    const roomId = generateRoomId();
+
+    // Create AI player
+    const aiSessionId = createAIPlayer(roomId, 1);
+
+    rooms[roomId] = {
+      sessions: [sessionId, aiSessionId],
+      scores: [0, 0],
+      choices: [null, null],
+      ready: [false, false],
+      resetRequests: [false, false],
+      status: 'waiting',
+      timerDuration: 3,
+      roundStartTime: 0,
+      lastGameResult: null,
+      createdAt: Date.now(),
+      roundsPlayed: 0,
+      hasAI: true
+    };
+
+    sessionToRoom[sessionId] = roomId;
+    sessionToRoom[aiSessionId] = roomId;
+    socket.join(roomId);
+    socket.emit('room_created', roomId);
+
+    logToRoom(roomId, 'room_created', { creator: sessionId.slice(0, 8), ip: clientIp, ai: true });
+    serverLog(`AI Room ${roomId} created`);
+
+    // Start game after a short delay
+    setTimeout(() => {
+      if (rooms[roomId] && rooms[roomId].sessions[0] && rooms[roomId].sessions[1]) {
+        startRound(roomId);
+      }
+    }, 1000);
+  });
+
   socket.on('join_room', (roomId) => {
     const sessionId = socketToSession[socket.id];
     if (!sessionId) {
@@ -677,7 +811,20 @@ io.on('connection', (socket) => {
     const otherSlot = slot === 0 ? 1 : 0;
     emitToPlayer(roomId, otherSlot, 'opponent_ready');
 
-    if (room.ready[0] && room.ready[1]) {
+    // Auto-ready AI player if present
+    if (room.hasAI && isAIPlayer(room.sessions[otherSlot]) && !room.ready[otherSlot]) {
+      setTimeout(() => {
+        if (rooms[roomId] && !rooms[roomId].ready[otherSlot]) {
+          rooms[roomId].ready[otherSlot] = true;
+          emitToPlayer(roomId, slot, 'opponent_ready');
+
+          if (rooms[roomId].ready[0] && rooms[roomId].ready[1]) {
+            rooms[roomId].ready = [false, false];
+            startRound(roomId);
+          }
+        }
+      }, 500);
+    } else if (room.ready[0] && room.ready[1]) {
       room.ready = [false, false];
       startRound(roomId);
     }
@@ -791,6 +938,11 @@ function startRound(roomId) {
     duration: room.timerDuration,
     serverTime: room.roundStartTime
   });
+
+  // Trigger AI turn if there's an AI player
+  if (room.hasAI) {
+    handleAITurn(roomId);
+  }
 }
 
 function resolveGame(roomId) {
