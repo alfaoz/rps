@@ -511,6 +511,124 @@ function updateAIState(aiState, opponentChoice, aiChoice, result) {
   }
 }
 
+// Generate comprehensive debug information about AI's thought process
+function generateAIDebugInfo(aiState, choiceWeights, finalChoice) {
+  const debugInfo = {
+    difficulty: aiState.difficulty,
+    roundNumber: aiState.opponentHistory.length + 1,
+    dataCollected: aiState.opponentHistory.length,
+
+    // Opponent analysis
+    opponentProfile: {
+      totalMoves: aiState.opponentHistory.length,
+      recentHistory: aiState.opponentHistory.slice(-5),
+      overallFrequency: { ...aiState.overallFrequency },
+      recentFrequency: { ...aiState.recentFrequency },
+      favoriteChoice: getMostFrequent(aiState.overallFrequency),
+      recentFavorite: aiState.opponentHistory.length >= 5 ? getMostFrequent(aiState.recentFrequency) : null
+    },
+
+    // Pattern detection
+    patterns: {
+      currentStreak: aiState.currentStreak.count > 0 ? {
+        choice: aiState.currentStreak.choice,
+        length: aiState.currentStreak.count,
+        prediction: `Will likely switch (${Math.min(aiState.currentStreak.count * 30, 90)}% confidence)`
+      } : null,
+
+      transitions: aiState.opponentHistory.length >= 2 ? {
+        lastTransition: `${aiState.opponentHistory[aiState.opponentHistory.length - 2]} → ${aiState.opponentHistory[aiState.opponentHistory.length - 1]}`,
+        matrix: { ...aiState.transitionMatrix }
+      } : null
+    },
+
+    // Psychological insights
+    psychology: {
+      afterWinBehavior: sumFreq(aiState.afterWin) > 0 ? {
+        pattern: getMostFrequent(aiState.afterWin),
+        confidence: sumFreq(aiState.afterWin) > 0 ?
+          (aiState.afterWin[getMostFrequent(aiState.afterWin)] / sumFreq(aiState.afterWin) * 100).toFixed(0) + '%' : 'N/A',
+        data: { ...aiState.afterWin }
+      } : null,
+
+      afterLossBehavior: sumFreq(aiState.afterLoss) > 0 ? {
+        pattern: getMostFrequent(aiState.afterLoss),
+        confidence: sumFreq(aiState.afterLoss) > 0 ?
+          (aiState.afterLoss[getMostFrequent(aiState.afterLoss)] / sumFreq(aiState.afterLoss) * 100).toFixed(0) + '%' : 'N/A',
+        data: { ...aiState.afterLoss }
+      } : null,
+
+      lastResult: aiState.resultHistory.length > 0 ?
+        aiState.resultHistory[aiState.resultHistory.length - 1] : null
+    },
+
+    // Decision making
+    decisionProcess: {
+      rawWeights: { ...choiceWeights },
+      normalizedProbabilities: {
+        rock: ((choiceWeights.rock / (choiceWeights.rock + choiceWeights.paper + choiceWeights.scissors)) * 100).toFixed(1) + '%',
+        paper: ((choiceWeights.paper / (choiceWeights.rock + choiceWeights.paper + choiceWeights.scissors)) * 100).toFixed(1) + '%',
+        scissors: ((choiceWeights.scissors / (choiceWeights.rock + choiceWeights.paper + choiceWeights.scissors)) * 100).toFixed(1) + '%'
+      },
+      finalChoice,
+      reasoning: []
+    },
+
+    // Meta-game analysis (expert only)
+    metaGame: null
+  };
+
+  // Add reasoning based on what influenced the decision
+  const total = choiceWeights.rock + choiceWeights.paper + choiceWeights.scissors;
+  const rockProb = choiceWeights.rock / total;
+  const paperProb = choiceWeights.paper / total;
+  const scissorsProb = choiceWeights.scissors / total;
+
+  const maxProb = Math.max(rockProb, paperProb, scissorsProb);
+  const isBalanced = maxProb < 0.4;
+
+  if (isBalanced) {
+    debugInfo.decisionProcess.reasoning.push('⚖️ Decision is balanced - no clear pattern detected yet');
+  } else {
+    const favored = rockProb === maxProb ? 'rock' : (paperProb === maxProb ? 'paper' : 'scissors');
+    debugInfo.decisionProcess.reasoning.push(`🎯 Heavily favoring ${favored} based on detected patterns`);
+  }
+
+  // Streak reasoning
+  if (aiState.currentStreak.count >= 2) {
+    debugInfo.decisionProcess.reasoning.push(
+      `🔄 Detected ${aiState.currentStreak.count}x ${aiState.currentStreak.choice} streak - exploiting`
+    );
+  }
+
+  // Frequency reasoning
+  if (aiState.opponentHistory.length >= 10) {
+    const mostFreq = getMostFrequent(aiState.recentFrequency);
+    const freqCount = aiState.recentFrequency[mostFreq];
+    if (freqCount >= 4) {
+      debugInfo.decisionProcess.reasoning.push(
+        `📊 Opponent plays ${mostFreq} frequently (${freqCount}/10 recent) - countering`
+      );
+    }
+  }
+
+  // Psychological reasoning
+  if (aiState.resultHistory.length > 0) {
+    const lastResult = aiState.resultHistory[aiState.resultHistory.length - 1];
+    if (lastResult === 'win' && sumFreq(aiState.afterLoss) > 3) {
+      const pattern = getMostFrequent(aiState.afterLoss);
+      const strength = aiState.afterLoss[pattern] / sumFreq(aiState.afterLoss);
+      if (strength > 0.5) {
+        debugInfo.decisionProcess.reasoning.push(
+          `🧠 After losses, opponent usually plays ${pattern} (${(strength * 100).toFixed(0)}% of time)`
+        );
+      }
+    }
+  }
+
+  return debugInfo;
+}
+
 // Easy difficulty: 70% random, 30% basic counter
 function easyStrategy(aiState) {
   if (Math.random() < 0.7 || aiState.opponentHistory.length < 5) {
@@ -736,31 +854,61 @@ function expertStrategy(aiState) {
 /**
  * Main AI Decision Function
  */
-function makeAIDecision(aiSessionId, opponentLastChoice) {
+function makeAIDecision(aiSessionId, opponentLastChoice, includeDebug = false) {
   const aiPlayer = aiPlayers[aiSessionId];
   if (!aiPlayer || !aiPlayer.state) {
     const choices = ['rock', 'paper', 'scissors'];
-    return choices[Math.floor(Math.random() * choices.length)];
+    const choice = choices[Math.floor(Math.random() * choices.length)];
+    return includeDebug ? { choice, debug: null } : choice;
   }
 
   const aiState = aiPlayer.state;
 
+  // Capture weights by recalculating (only for debug mode)
+  let choiceWeights = { rock: 33, paper: 33, scissors: 33 };
   let choice;
+
   switch (aiState.difficulty) {
     case 'easy':
       choice = easyStrategy(aiState);
+      if (includeDebug && aiState.opponentHistory.length >= 5) {
+        const mostPlayed = getMostFrequent(aiState.overallFrequency);
+        choiceWeights[beats(mostPlayed)] = 70;
+        choiceWeights[choice === beats(mostPlayed) ? 'rock' : choice] = 15;
+        choiceWeights[choice !== beats(mostPlayed) && choice !== 'rock' ? 'paper' : (choice !== beats(mostPlayed) ? 'scissors' : 'rock')] = 15;
+      }
       break;
+
     case 'medium':
-      choice = mediumStrategy(aiState);
-      break;
     case 'hard':
-      choice = hardStrategy(aiState);
-      break;
     case 'expert':
-      choice = expertStrategy(aiState);
+      // For medium/hard/expert, we need to recalculate to get weights
+      const weights = { rock: includeDebug ? 20 : 33, paper: includeDebug ? 20 : 33, scissors: includeDebug ? 20 : 33 };
+
+      // Run the same logic as strategy functions
+      if (aiState.opponentHistory.length >= 5) {
+        const recent = aiState.opponentHistory.slice(-10);
+        for (const c of recent) {
+          weights[beats(c)] += 2;
+        }
+      }
+
+      if (includeDebug) {
+        choiceWeights = { ...weights };
+      }
+
+      choice = aiState.difficulty === 'medium' ? mediumStrategy(aiState) :
+               aiState.difficulty === 'hard' ? hardStrategy(aiState) :
+               expertStrategy(aiState);
       break;
+
     default:
       choice = hardStrategy(aiState);
+  }
+
+  if (includeDebug) {
+    const debug = generateAIDebugInfo(aiState, choiceWeights, choice);
+    return { choice, debug };
   }
 
   return choice;
@@ -807,7 +955,17 @@ function handleAITurn(roomId) {
         opponentLastChoice = room.lastGameResult.choices[opponentSlot];
       }
 
-      const choice = makeAIDecision(sessionId, opponentLastChoice);
+      // Get AI decision with debug info if in debug mode
+      const includeDebug = room.debugMode || false;
+      const decision = makeAIDecision(sessionId, opponentLastChoice, includeDebug);
+
+      const choice = includeDebug ? decision.choice : decision;
+      const aiDebug = includeDebug ? decision.debug : null;
+
+      // Store debug info in room for client
+      if (aiDebug) {
+        room.aiDebugInfo = aiDebug;
+      }
 
       // Delay AI choice slightly to feel more natural (500-1500ms)
       const delay = 500 + Math.random() * 1000;
@@ -819,6 +977,11 @@ function handleAITurn(roomId) {
           logToRoom(roomId, 'choice', { player: slot + 1, choice, ai: true });
 
           emitToRoom(roomId, 'player_ready', { player: slot + 1 });
+
+          // Send AI debug info to client if in debug mode
+          if (rooms[roomId].debugMode && rooms[roomId].aiDebugInfo) {
+            emitToPlayer(roomId, opponentSlot, 'ai_debug', rooms[roomId].aiDebugInfo);
+          }
 
           // Check if both players have chosen
           if (rooms[roomId].choices[0] && rooms[roomId].choices[1]) {
@@ -1053,7 +1216,7 @@ io.on('connection', (socket) => {
     serverLog(`Room ${roomId} created`);
   });
 
-  socket.on('create_ai_room', () => {
+  socket.on('create_ai_room', (options = {}) => {
     const sessionId = socketToSession[socket.id];
     if (!sessionId) {
       socket.emit('error', 'No session');
@@ -1061,6 +1224,7 @@ io.on('connection', (socket) => {
     }
 
     const roomId = generateRoomId();
+    const debugMode = options.debugMode || false;
 
     // Create AI player
     const aiSessionId = createAIPlayer(roomId, 1);
@@ -1077,7 +1241,8 @@ io.on('connection', (socket) => {
       lastGameResult: null,
       createdAt: Date.now(),
       roundsPlayed: 0,
-      hasAI: true
+      hasAI: true,
+      debugMode
     };
 
     sessionToRoom[sessionId] = roomId;

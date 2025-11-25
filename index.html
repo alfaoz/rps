@@ -354,6 +354,65 @@
       opacity: 0.5;
     }
 
+    .ai-debug-panel {
+      position: fixed;
+      top: 50px;
+      right: 10px;
+      width: 320px;
+      max-height: 80vh;
+      background: #000;
+      border: 2px solid #00ff00;
+      padding: 10px;
+      font-size: 0.7em;
+      overflow-y: auto;
+      z-index: 1000;
+      font-family: 'Courier New', monospace;
+    }
+
+    .ai-debug-header {
+      color: #00ff00;
+      font-weight: bold;
+      margin-bottom: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .ai-debug-section {
+      margin: 10px 0;
+      padding: 8px;
+      border: 1px solid #333;
+    }
+
+    .ai-debug-section-title {
+      color: #00aaff;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .ai-debug-value {
+      color: #aaa;
+      margin-left: 10px;
+    }
+
+    .ai-debug-highlight {
+      color: #ffff00;
+      font-weight: bold;
+    }
+
+    .ai-debug-probability {
+      display: inline-block;
+      background: #222;
+      padding: 2px 6px;
+      margin: 2px;
+      border: 1px solid #444;
+    }
+
+    .ai-debug-reasoning {
+      margin-top: 5px;
+      padding-left: 10px;
+      border-left: 2px solid #00ff00;
+    }
+
     .score {
       font-size: 0.9em;
       margin: 10px 0;
@@ -488,6 +547,20 @@
       <div class="leave-confirm-text">opponent left the game :(</div>
       <div class="leave-confirm-buttons">
         <button onclick="exitToMenu()">okay</button>
+      </div>
+    </div>
+
+    <!-- AI Debug Panel -->
+    <div id="aiDebugPanel" class="ai-debug-panel" style="display: none;">
+      <div class="ai-debug-header">
+        <span>AI MIND [<span id="aiDifficulty">-</span>]</span>
+        <button class="ai-debug-toggle" onclick="toggleAIDebug()">_</button>
+      </div>
+      <div id="aiDebugContent" class="ai-debug-content">
+        <div class="ai-debug-section">
+          <div class="ai-debug-label">Round #<span id="debugRound">-</span> | Data: <span id="debugData">-</span></div>
+        </div>
+        <div id="debugSections"></div>
       </div>
     </div>
   </div>
@@ -653,7 +726,7 @@
         showError('game open in another tab!');
         return;
       }
-      socket.emit('create_ai_room');
+      socket.emit('create_ai_room', { debugMode });
     }
 
     function joinRoom() {
@@ -989,6 +1062,7 @@
       document.getElementById('leaveConfirm').style.display = 'none';
       document.getElementById('playerLeftDialog').style.display = 'none';
       document.getElementById('result').style.display = 'none';
+      document.getElementById('aiDebugPanel').style.display = 'none';
 
       // Clean URL
       window.history.pushState({}, '', window.location.pathname);
@@ -1031,6 +1105,118 @@
     }
 
     // Setup all socket event listeners
+    function toggleAIDebug() {
+      const content = document.getElementById('aiDebugContent');
+      const button = document.querySelector('.ai-debug-toggle');
+      if (content.style.display === 'none') {
+        content.style.display = 'block';
+        button.textContent = '_';
+      } else {
+        content.style.display = 'none';
+        button.textContent = '+';
+      }
+    }
+
+    function renderAIDebug(debugInfo) {
+      // Show the panel if not visible
+      const panel = document.getElementById('aiDebugPanel');
+      panel.style.display = 'block';
+
+      // Update header info
+      document.getElementById('aiDifficulty').textContent = debugInfo.difficulty.toUpperCase();
+      document.getElementById('debugRound').textContent = debugInfo.roundNumber;
+      document.getElementById('debugData').textContent = debugInfo.dataCollected + ' rounds';
+
+      // Prepare debug sections
+      const sectionsContainer = document.getElementById('debugSections');
+      let html = '';
+
+      // Opponent Profile
+      if (debugInfo.opponentProfile) {
+        const profile = debugInfo.opponentProfile;
+        html += '<div class="ai-debug-section">';
+        html += '<div class="ai-debug-label">🎯 OPPONENT PROFILE</div>';
+        html += '<div class="ai-debug-text">';
+        html += `Favorite: ${profile.favoriteChoice || '-'}<br>`;
+        html += `Frequency: R:${profile.frequency.rock} P:${profile.frequency.paper} S:${profile.frequency.scissors}<br>`;
+        html += `Recent (5): ${profile.recentHistory.join(', ') || '-'}`;
+        html += '</div></div>';
+      }
+
+      // Patterns
+      if (debugInfo.patterns) {
+        const patterns = debugInfo.patterns;
+        html += '<div class="ai-debug-section">';
+        html += '<div class="ai-debug-label">📊 PATTERNS</div>';
+        html += '<div class="ai-debug-text">';
+        if (patterns.currentStreak && patterns.currentStreak.count > 0) {
+          html += `Streak: ${patterns.currentStreak.choice} x${patterns.currentStreak.count}<br>`;
+        }
+        if (patterns.transitions && patterns.transitions.length > 0) {
+          html += `Transitions: ${patterns.transitions.join(', ')}`;
+        }
+        html += '</div></div>';
+      }
+
+      // Psychology
+      if (debugInfo.psychology) {
+        const psych = debugInfo.psychology;
+        html += '<div class="ai-debug-section">';
+        html += '<div class="ai-debug-label">🧠 PSYCHOLOGY</div>';
+        html += '<div class="ai-debug-text">';
+        if (psych.lastResult) {
+          html += `Last: ${psych.lastResult}<br>`;
+        }
+        if (psych.afterWinBehavior) {
+          html += `After Win: ${psych.afterWinBehavior}<br>`;
+        }
+        if (psych.afterLossBehavior) {
+          html += `After Loss: ${psych.afterLossBehavior}`;
+        }
+        html += '</div></div>';
+      }
+
+      // Decision Process
+      if (debugInfo.decisionProcess) {
+        const decision = debugInfo.decisionProcess;
+        html += '<div class="ai-debug-section">';
+        html += '<div class="ai-debug-label">🤖 DECISION</div>';
+        html += '<div class="ai-debug-text">';
+        if (decision.normalizedProbabilities) {
+          const probs = decision.normalizedProbabilities;
+          html += `Probabilities:<br>`;
+          html += `🪨 Rock: ${(probs.rock * 100).toFixed(1)}%<br>`;
+          html += `📄 Paper: ${(probs.paper * 100).toFixed(1)}%<br>`;
+          html += `✂️ Scissors: ${(probs.scissors * 100).toFixed(1)}%<br>`;
+        }
+        if (decision.finalChoice) {
+          html += `<strong>Chose: ${decision.finalChoice}</strong>`;
+        }
+        html += '</div></div>';
+      }
+
+      // Reasoning
+      if (debugInfo.decisionProcess && debugInfo.decisionProcess.reasoning && debugInfo.decisionProcess.reasoning.length > 0) {
+        html += '<div class="ai-debug-section">';
+        html += '<div class="ai-debug-label">💭 REASONING</div>';
+        html += '<div class="ai-debug-text">';
+        debugInfo.decisionProcess.reasoning.forEach(reason => {
+          html += `• ${reason}<br>`;
+        });
+        html += '</div></div>';
+      }
+
+      // Meta-game
+      if (debugInfo.metaGame) {
+        html += '<div class="ai-debug-section">';
+        html += '<div class="ai-debug-label">🎮 META-GAME</div>';
+        html += `<div class="ai-debug-text">${debugInfo.metaGame}</div>`;
+        html += '</div>';
+      }
+
+      sectionsContainer.innerHTML = html;
+    }
+
     function setupSocketListeners() {
       socket.on('session_registered', () => {
         console.log('[CLIENT] Session registered');
@@ -1237,6 +1423,11 @@
 
       socket.on('receive_reaction', ({ emoji }) => {
         displayReaction(emoji);
+      });
+
+      socket.on('ai_debug', (debugInfo) => {
+        console.log('[CLIENT] AI Debug:', debugInfo);
+        renderAIDebug(debugInfo);
       });
     }
   </script>
