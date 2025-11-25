@@ -269,6 +269,43 @@ app.post(`${BASE_PATH}/api/admin/cleanup`, adminAuth, (req, res) => {
   res.json({ cleaned });
 });
 
+app.post(`${BASE_PATH}/api/admin/room/:roomId/delete`, adminAuth, (req, res) => {
+  const { roomId } = req.params;
+
+  const room = rooms[roomId];
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  // Notify all players in the room that it's being closed by admin
+  emitToRoom(roomId, 'room_closed_by_admin');
+
+  // Collect session IDs before removal (since removePlayerFromRoom modifies the array)
+  const sessionIds = room.sessions.filter(sid => sid !== null);
+
+  // Remove all players from the room (like being kicked)
+  for (const sessionId of sessionIds) {
+    if (sessionId) {
+      removePlayerFromRoom(sessionId, roomId);
+    }
+  }
+
+  // Log the admin deletion
+  logToRoom(roomId, 'room_deleted_by_admin', { totalRounds: room.roundsPlayed || 0 });
+
+  // Force delete the room if it still exists (removePlayerFromRoom auto-deletes when empty)
+  if (rooms[roomId]) {
+    delete rooms[roomId];
+    // Schedule log cleanup (after 1 hour)
+    setTimeout(() => {
+      delete roomLogs[roomId];
+    }, 3600000);
+  }
+
+  serverLog(`Admin deleted room ${roomId}`);
+  res.json({ success: true, roomId });
+});
+
 // ===================
 // GAME API
 // ===================
@@ -378,7 +415,8 @@ function removePlayerFromRoom(sessionId, roomId) {
 
   delete sessionToRoom[sessionId];
   delete disconnectTimers[sessionId];
-  delete sessionToSocket[sessionId];
+  // NOTE: Don't delete sessionToSocket here - socket is still connected
+  // and player should be able to create/join new rooms
 
   const otherSlot = slot === 0 ? 1 : 0;
   if (room.sessions[otherSlot]) {
@@ -700,9 +738,7 @@ io.on('connection', (socket) => {
       logToRoom(roomId, 'player_left_intentionally', { sessionId: sessionId.slice(0, 8) });
       removePlayerFromRoom(sessionId, roomId);
     }
-
-    // Clean up socket mapping
-    delete socketToSession[socket.id];
+    // NOTE: Don't delete socketToSession - session persists for new rooms
   });
 
   socket.on('disconnect', () => {

@@ -327,7 +327,10 @@
               <td>${room.scores[0]} - ${room.scores[1]}</td>
               <td>${room.roundsPlayed}</td>
               <td>${players}</td>
-              <td><button class="btn" onclick="viewLogs('${room.roomId}')">Logs</button></td>
+              <td>
+                <button class="btn" onclick="viewLogs('${room.roomId}')">Logs</button>
+                <button class="btn" onclick="deleteRoom('${room.roomId}')" style="margin-left: 5px;">Delete</button>
+              </td>
             </tr>
           `;
         }).join('');
@@ -405,6 +408,28 @@
         await refresh();
       } catch (e) {
         console.error('Failed to cleanup:', e);
+      }
+    }
+
+    async function deleteRoom(roomId) {
+      if (!confirm(`Delete room ${roomId}? All players will be removed from the room.`)) return;
+
+      try {
+        const res = await fetch(`${BASE_PATH}/api/admin/room/${roomId}/delete`, { method: 'POST' });
+        if (res.ok) {
+          // Hide logs if this was the selected room
+          if (currentRoomLogs === roomId) {
+            document.getElementById('selectedRoomLogs').style.display = 'none';
+            currentRoomLogs = null;
+          }
+          await refresh();
+        } else {
+          const error = await res.json();
+          alert(`Failed to delete room: ${error.error || 'Unknown error'}`);
+        }
+      } catch (e) {
+        console.error('Failed to delete room:', e);
+        alert('Failed to delete room');
       }
     }
 
