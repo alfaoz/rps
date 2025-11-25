@@ -315,7 +315,8 @@
           const players = room.players.map(p => {
             const connClass = p.connected ? 'connected' : 'disconnected';
             const pingClass = getPingClass(p.ping);
-            return `P${p.slot}: ${p.ip} <span class="${pingClass}">${p.ping || '?'}ms</span> <span class="${connClass}">[${p.connected ? 'ON' : 'OFF'}]</span>`;
+            const countryFlag = p.country ? `[${p.country}] ` : '';
+            return `P${p.slot}: ${countryFlag}${p.ip} <span class="${pingClass}">${p.ping || '?'}ms</span> <span class="${connClass}">[${p.connected ? 'ON' : 'OFF'}]</span>`;
           }).join('<br>') || '<span style="color: #666;">-</span>';
 
           const statusClass = room.status === 'playing' ? 'status-playing' : 'status-waiting';
@@ -368,11 +369,12 @@
         tbody.innerHTML = sessions.map(s => {
           const pingClass = getPingClass(s.ping);
           const inactiveClass = getInactiveClass(s.inactiveSeconds);
+          const countryFlag = s.country ? `[${s.country}] ` : '';
 
           return `
             <tr>
               <td>${s.sessionId}</td>
-              <td>${s.ip}</td>
+              <td>${countryFlag}${s.ip}</td>
               <td class="${pingClass}">${s.ping || '-'}ms</td>
               <td class="${inactiveClass}">${formatInactive(s.inactiveSeconds)}</td>
               <td>${s.roomId || '-'}</td>

@@ -5,6 +5,7 @@ const path = require('path');
 const readline = require('readline');
 const cookieParser = require('cookie-parser');
 const { v4: uuidv4 } = require('uuid');
+const geoip = require('geoip-lite');
 
 const app = express();
 const server = http.createServer(app);
@@ -180,10 +181,12 @@ app.get(`${BASE_PATH}/api/admin/rooms`, adminAuth, (req, res) => {
       const sessionId = room.sessions[i];
       if (sessionId) {
         const data = sessionData[sessionId] || {};
+        const ip = data.ip || 'unknown';
         players.push({
           slot: i + 1,
           sessionId: sessionId.slice(0, 8) + '...',
-          ip: data.ip || 'unknown',
+          ip: ip,
+          country: getCountryCode(ip),
           ping: data.lastPing || null,
           connected: !!sessionToSocket[sessionId]
         });
@@ -213,10 +216,12 @@ app.get(`${BASE_PATH}/api/admin/sessions`, adminAuth, (req, res) => {
   for (const sessionId in sessionToSocket) {
     const data = sessionData[sessionId] || {};
     const roomId = sessionToRoom[sessionId];
+    const ip = data.ip || 'unknown';
     sessions.push({
       sessionId: sessionId.slice(0, 8) + '...',
       fullSessionId: sessionId,
-      ip: data.ip || 'unknown',
+      ip: ip,
+      country: getCountryCode(ip),
       ping: data.lastPing || null,
       roomId: roomId || null,
       connectedAt: data.connectedAt,
@@ -364,6 +369,19 @@ function emitToRoom(roomId, event, data) {
 function getClientIp(socket) {
   return socket.handshake.headers['x-forwarded-for']?.split(',')[0].trim()
     || socket.handshake.address;
+}
+
+function getCountryCode(ip) {
+  // Skip localhost and private IPs
+  if (!ip || ip === '::1' || ip === '127.0.0.1' || ip.startsWith('::ffff:127.') || ip.startsWith('192.168.') || ip.startsWith('10.')) {
+    return null;
+  }
+
+  // Remove ::ffff: prefix if present
+  const cleanIp = ip.replace(/^::ffff:/, '');
+
+  const geo = geoip.lookup(cleanIp);
+  return geo ? geo.country : null;
 }
 
 // ===================
