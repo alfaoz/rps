@@ -1138,7 +1138,7 @@
         html += '<div class="ai-debug-label">🎯 OPPONENT PROFILE</div>';
         html += '<div class="ai-debug-text">';
         html += `Favorite: ${profile.favoriteChoice || '-'}<br>`;
-        html += `Frequency: R:${profile.frequency.rock} P:${profile.frequency.paper} S:${profile.frequency.scissors}<br>`;
+        html += `Frequency: R:${profile.overallFrequency.rock} P:${profile.overallFrequency.paper} S:${profile.overallFrequency.scissors}<br>`;
         html += `Recent (5): ${profile.recentHistory.join(', ') || '-'}`;
         html += '</div></div>';
       }
@@ -1149,11 +1149,11 @@
         html += '<div class="ai-debug-section">';
         html += '<div class="ai-debug-label">📊 PATTERNS</div>';
         html += '<div class="ai-debug-text">';
-        if (patterns.currentStreak && patterns.currentStreak.count > 0) {
-          html += `Streak: ${patterns.currentStreak.choice} x${patterns.currentStreak.count}<br>`;
+        if (patterns.currentStreak && patterns.currentStreak.length > 0) {
+          html += `Streak: ${patterns.currentStreak.choice} x${patterns.currentStreak.length}<br>`;
         }
-        if (patterns.transitions && patterns.transitions.length > 0) {
-          html += `Transitions: ${patterns.transitions.join(', ')}`;
+        if (patterns.transitions && patterns.transitions.lastTransition) {
+          html += `Last: ${patterns.transitions.lastTransition}`;
         }
         html += '</div></div>';
       }
@@ -1168,10 +1168,10 @@
           html += `Last: ${psych.lastResult}<br>`;
         }
         if (psych.afterWinBehavior) {
-          html += `After Win: ${psych.afterWinBehavior}<br>`;
+          html += `After Win: ${psych.afterWinBehavior.pattern} (${psych.afterWinBehavior.confidence})<br>`;
         }
         if (psych.afterLossBehavior) {
-          html += `After Loss: ${psych.afterLossBehavior}`;
+          html += `After Loss: ${psych.afterLossBehavior.pattern} (${psych.afterLossBehavior.confidence})`;
         }
         html += '</div></div>';
       }
@@ -1185,9 +1185,9 @@
         if (decision.normalizedProbabilities) {
           const probs = decision.normalizedProbabilities;
           html += `Probabilities:<br>`;
-          html += `🪨 Rock: ${(probs.rock * 100).toFixed(1)}%<br>`;
-          html += `📄 Paper: ${(probs.paper * 100).toFixed(1)}%<br>`;
-          html += `✂️ Scissors: ${(probs.scissors * 100).toFixed(1)}%<br>`;
+          html += `🪨 Rock: ${probs.rock}<br>`;
+          html += `📄 Paper: ${probs.paper}<br>`;
+          html += `✂️ Scissors: ${probs.scissors}<br>`;
         }
         if (decision.finalChoice) {
           html += `<strong>Chose: ${decision.finalChoice}</strong>`;
